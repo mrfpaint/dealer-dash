@@ -12,9 +12,18 @@ CREATE TABLE IF NOT EXISTS users (
   pass_salt   TEXT NOT NULL,
   pass_hash   TEXT NOT NULL,
   active      INTEGER NOT NULL DEFAULT 1,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  source      TEXT,                                 -- 'fieldone' = managed by the nightly sync
+  ext_id      TEXT                                  -- '<sheet>:<FieldOne id>'
 );
 CREATE INDEX IF NOT EXISTS idx_users_manager ON users(manager_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_ext ON users(ext_id);
+
+-- Small key/value store (last FieldOne sync result).
+CREATE TABLE IF NOT EXISTS meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS brands (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

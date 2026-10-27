@@ -981,8 +981,18 @@ async function viewUsers() {
   const mgrOpts = (cur, self) => `<option value="">— none —</option>` + managers.filter((m) => m.id !== self)
     .map((m) => `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>${esc(m.name)} (${ROLE_LABEL[m.role]})</option>`).join('');
 
+  let last = null;
+  try { last = (await api('/api/fieldone/status')).last; } catch { /* shown as never */ }
+  const synced = users.filter((u) => u.source === 'fieldone');
   app.innerHTML = `
     <h1>Users</h1>
+    <div class="card spaced">
+      <div><b>FieldOne accounts:</b> ${synced.filter((u) => u.active).length} active.
+        STs and BDOs log in as reps, ASMs and RSMs as managers, and NSH/SH/NH as sales heads, with the same username and password as FieldOne.<br>
+        <span class="muted">${last ? `Last synced ${new Date(last.at).toLocaleString('en-IN')}: ${last.added} added, ${last.updated} updated, ${last.disabled} disabled${last.skipped?.length ? `, ${last.skipped.length} skipped (username already used here: ${esc(last.skipped.join(', '))})` : ''}.` : 'Not synced yet.'}
+        Syncs automatically every night.</span></div>
+      <button class="btn primary" id="syncBtn">Sync from FieldOne now</button>
+    </div>
     <div class="card"><h2>Add a user</h2>
       <form id="addUser" class="filters">
         <div><label>Name</label><input name="name" required></div>
@@ -993,14 +1003,28 @@ async function viewUsers() {
         <div><label>Password</label><input name="password" required minlength="6" placeholder="min 6 characters"></div>
         <div style="align-self:end"><button class="btn primary block">Add user</button></div>
       </form>
-      <div class="hint">Managers see visits by everyone who reports to them, directly or through others. The sales head and admins see everything.</div>
+      <div class="hint">For people who are not in FieldOne. Managers see visits by everyone who reports to them, directly or through others. The sales head and admins see everything.</div>
     </div>
+    <div class="toolbar"><input id="userSearch" placeholder="Search name, login, region…" style="max-width:320px"></div>
     <div class="scroll-x"><table class="data"><thead><tr><th>Name</th><th>Login</th><th>Role</th><th>Reports to</th><th>Region</th><th class="right">Visits</th><th>Status</th></tr></thead>
-    <tbody>${users.map((u) => `<tr class="click" data-id="${u.id}">
-      <td><b>${esc(u.name)}</b></td><td>${esc(u.login)}</td><td>${ROLE_LABEL[u.role]}</td>
+    <tbody>${users.map((u) => `<tr class="click" data-id="${u.id}" data-search="${esc([u.name, u.login, u.region, byId[u.manager_id]?.name].join(' ').toLowerCase())}">
+      <td><b>${esc(u.name)}</b>${u.source === 'fieldone' ? ' <span class="pill">FieldOne</span>' : ''}</td><td>${esc(u.login)}</td><td>${ROLE_LABEL[u.role]}</td>
       <td>${esc(byId[u.manager_id]?.name || '')}</td><td>${esc(u.region || '')}</td><td class="right">${u.visits}</td>
       <td>${u.active ? 'Active' : '<span class="pill">Disabled</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 
+  $('#userSearch').oninput = (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    app.querySelectorAll('tbody tr').forEach((tr) => { tr.hidden = q && !tr.dataset.search.includes(q); });
+  };
+  $('#syncBtn').onclick = async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Syncing…';
+    try {
+      const r = await api('/api/fieldone/sync', { method: 'POST' });
+      toast(`Synced: ${r.added} added, ${r.updated} updated, ${r.disabled} disabled`);
+      viewUsers();
+    } catch (err) { toast(err.message, true); e.target.disabled = false; e.target.textContent = 'Sync from FieldOne now'; }
+  };
   $('#addUser').onsubmit = async (e) => {
     e.preventDefault();
     try {
@@ -1013,6 +1037,10 @@ async function viewUsers() {
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
     const u = byId[tr.dataset.id];
+    if (u.source === 'fieldone') {
+      toast(`${u.name} is managed by FieldOne. Change name, role, manager or password there; it syncs overnight.`);
+      return;
+    }
     const bg = document.createElement('div');
     bg.className = 'modal-bg';
     bg.innerHTML = `<div class="modal" style="max-width:480px"><div class="head"><h2 style="margin:0">${esc(u.name)}</h2><button class="btn small" data-close>Close</button></div>
@@ -1115,15 +1143,17 @@ function viewAccount() {
       <h1>Account</h1>
       <div class="card"><dl class="kv"><dt>Name</dt><dd>${esc(user.name)}</dd><dt>Login</dt><dd>${esc(user.login)}</dd>
         <dt>Role</dt><dd>${ROLE_LABEL[user.role]}</dd>${user.region ? `<dt>Region</dt><dd>${esc(user.region)}</dd>` : ''}</dl></div>
-      <div class="card"><h2>Change password</h2>
+      ${user.source === 'fieldone'
+        ? '<div class="card"><h2>Password</h2><p class="muted" style="margin:0">You log in with your FieldOne username and password. To change it, change it in FieldOne; Dealer Dash picks it up overnight.</p></div>'
+        : `<div class="card"><h2>Change password</h2>
         <form id="pwForm"><label>Current password</label><input name="old" type="password" required autocomplete="current-password">
           <label>New password</label><input name="new" type="password" required minlength="6" autocomplete="new-password">
-          <button class="btn primary mt">Change password</button></form></div>
+          <button class="btn primary mt">Change password</button></form></div>`}
       <div class="card"><h2>Install on your phone</h2>
         <p class="muted" style="margin:0">Android (Chrome): menu ⋮ → <b>Add to Home screen</b>. iPhone (Safari): Share → <b>Add to Home Screen</b>. The app then opens full-screen and works without signal.</p></div>
       <button class="btn block" id="logoutBtn">Log out</button>
     </div>`;
-  $('#pwForm').onsubmit = async (e) => {
+  if ($('#pwForm')) $('#pwForm').onsubmit = async (e) => {
     e.preventDefault();
     try { await api('/api/password', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); toast('Password changed'); e.target.reset(); }
     catch (err) { toast(err.message, true); }

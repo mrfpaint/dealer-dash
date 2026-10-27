@@ -19,6 +19,30 @@ Data is in D1 (`dealer-dash`) and photos are in R2 (`dealer-dash-photos`). No bu
 | Sales head | Dashboard of everything, status, and editing brands and classifications |
 | Admin | Everything, plus adding and disabling users and resetting passwords |
 
+## Accounts come from FieldOne
+
+Staff log in with their **FieldOne username and password**. The Worker reads FieldOne's STs, BDOs, ASMs and
+RSMs sheets (through `FIELDONE_URL`) every night at 02:00 IST, and whenever an admin presses **Sync from
+FieldOne now** on the Users page:
+
+| FieldOne | Dealer Dash |
+|---|---|
+| ST, BDO | Field rep, reporting to their ASM |
+| ASM | Area manager, reporting to their RSM |
+| RSM | Area manager |
+| RSM row with region All India / South / North (NSH, SH, NH) | Sales head |
+
+- Only active rows with a username and password are imported. A blank status counts as active, as it does in FieldOne.
+- Passwords ignore upper/lower case, the same as FieldOne.
+- New staff are added, and changed passwords, names or managers are updated. People who leave or are marked
+  Inactive in FieldOne are disabled; their past visits are kept.
+- Synced accounts are read-only in Dealer Dash. Change them in FieldOne.
+- Accounts created by hand on the Users page (admin, ISCs, outsiders) are never touched. If a FieldOne
+  username is already used by a hand-made account, that person is skipped and listed on the Users page.
+- Safety brake: if FieldOne suddenly returns far fewer active staff than Dealer Dash has, the sync stops
+  without disabling anyone.
+- Synced passwords are stored as an HMAC keyed by `TOKEN_SECRET`. Hand-made accounts use PBKDF2.
+
 ## What a visit records
 
 - **Auto-filled:** date, rep, GPS location.
@@ -49,7 +73,7 @@ npx wrangler d1 create dealer-dash          # paste the database_id into wrangle
 npx wrangler r2 bucket create dealer-dash-photos   # without R2, delete the [[r2_buckets]] block
 npx wrangler d1 execute dealer-dash --remote --file=schema.sql
 npx wrangler d1 execute dealer-dash --remote --file=seed.sql
-npx wrangler secret put TOKEN_SECRET       # paste a long random string
+npx wrangler secret put TOKEN_SECRET       # paste a long random string (changing it later invalidates sessions and synced passwords until the next sync)
 npx wrangler deploy
 ```
 

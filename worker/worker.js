@@ -3,6 +3,8 @@
 // Bindings (see wrangler.toml): DB (D1), PHOTOS (R2, optional).
 // Secret: TOKEN_SECRET.
 // Var: ALLOWED_ORIGINS — sites allowed to call the API (GitHub Pages + local dev).
+// Var: FIELDONE_URL — FieldOne worker whose staff sheets supply most user accounts
+//      (synced nightly by the cron trigger and on demand from the Users page).
 
 const TOKEN_DAYS = 30;            // long, so reps stay logged in while offline
 const PBKDF2_ITER = 50000;        // kept moderate for the Workers CPU limit
@@ -39,6 +41,10 @@ export default {
     res = new Response(res.body, res);
     for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
     return res;
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(syncFieldOne(env).catch((e) => console.error('FieldOne sync failed:', e.message)));
   },
 };
 
@@ -103,6 +109,13 @@ async function route(req, env, url) {
     if (m === 'GET') return getPhoto(env, me, mm[1], mm[2]);
   }
 
+  if (p === '/api/fieldone/sync' && m === 'POST') { requireRole(me, 'admin'); return json(await syncFieldOne(env)); }
+  if (p === '/api/fieldone/status' && m === 'GET') {
+    requireRole(me, 'admin');
+    const row = await env.DB.prepare("SELECT value FROM meta WHERE key = 'fieldone_sync'").first();
+    return json({ last: row ? JSON.parse(row.value) : null });
+  }
+
   if (p === '/api/users' && m === 'GET') return listUsers(env, me);
   if (p === '/api/users' && m === 'POST') return createUser(req, env, me);
   if ((mm = p.match(/^\/api\/users\/([\w-]+)$/)) && m === 'PATCH') return updateUser(req, env, me, mm[1]);
@@ -141,6 +154,27 @@ async function hmacKey(env) {
   return crypto.subtle.importKey('raw', te.encode(env.TOKEN_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
+// Passwords of FieldOne-synced users. The nightly sync re-checks every one of them,
+// so a fast keyed hash is used (PBKDF2 for ~250 users would blow the Worker CPU
+// limit); the key is derived from TOKEN_SECRET and never stored in D1. Lower-cased,
+// because FieldOne itself compares passwords case-insensitively.
+const SYNCED_SALT = 'fieldone';
+async function syncedPasswordKey(env) {
+  if (!env.TOKEN_SECRET) fail(500, 'TOKEN_SECRET is not configured');
+  return crypto.subtle.importKey('raw', te.encode(env.TOKEN_SECRET + '|fieldone-passwords'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+}
+async function syncedPasswordHash(env, password, key) {
+  key ||= await syncedPasswordKey(env);
+  return b64u.enc(await crypto.subtle.sign('HMAC', key, te.encode(String(password).trim().toLowerCase())));
+}
+
+async function passwordMatches(env, user, password) {
+  const hash = user.pass_salt === SYNCED_SALT
+    ? await syncedPasswordHash(env, password)
+    : (await hashPassword(String(password), user.pass_salt)).hash;
+  return timingSafeEqual(hash, user.pass_hash);
+}
+
 async function makeToken(env, userId) {
   const payload = b64u.enc(te.encode(JSON.stringify({ uid: userId, exp: Date.now() + TOKEN_DAYS * 86400e3 })));
   const sig = await crypto.subtle.sign('HMAC', await hmacKey(env), te.encode(payload));
@@ -161,7 +195,9 @@ async function authenticate(req, env) {
   return user;
 }
 
-const publicUser = (u) => ({ id: u.id, login: u.login, name: u.name, role: u.role, manager_id: u.manager_id, region: u.region, active: u.active });
+const publicUser = (u) => ({
+  id: u.id, login: u.login, name: u.name, role: u.role, manager_id: u.manager_id, region: u.region, active: u.active, source: u.source || null,
+});
 const isLead = (u) => u.role === 'head' || u.role === 'admin';
 const requireRole = (u, ...roles) => { if (!roles.includes(u.role)) fail(403, 'Not allowed for your role'); };
 
@@ -176,15 +212,14 @@ async function login(req, env) {
   const b = await body(req);
   const user = await env.DB.prepare('SELECT * FROM users WHERE login = ?').bind(String(b.login || '').trim()).first();
   if (!user || !user.active) fail(401, 'Wrong login or password');
-  const { hash } = await hashPassword(String(b.password || ''), user.pass_salt);
-  if (!timingSafeEqual(hash, user.pass_hash)) fail(401, 'Wrong login or password');
+  if (!(await passwordMatches(env, user, b.password || ''))) fail(401, 'Wrong login or password');
   return json({ token: await makeToken(env, user.id), user: publicUser(user) });
 }
 
 async function changePassword(req, env, me) {
+  if (me.source === 'fieldone') fail(400, 'Your password comes from FieldOne. Change it there; Dealer Dash picks it up overnight.');
   const b = await body(req);
-  const { hash } = await hashPassword(String(b.old || ''), me.pass_salt);
-  if (!timingSafeEqual(hash, me.pass_hash)) fail(400, 'Current password is wrong');
+  if (!(await passwordMatches(env, me, b.old || ''))) fail(400, 'Current password is wrong');
   await setPassword(env, me.id, b.new);
   return json({ ok: true });
 }
@@ -241,6 +276,7 @@ async function updateUser(req, env, me, id) {
   const b = await body(req);
   const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
   if (!user) fail(404, 'User not found');
+  if (user.source === 'fieldone') fail(400, 'This account is managed by FieldOne. Make the change there; it syncs overnight.');
   if (b.role !== undefined && !ROLES.includes(b.role)) fail(400, 'Invalid role');
   if (b.manager_id === id) fail(400, 'A user cannot report to themselves');
   if (id === me.id && (b.active === 0 || (b.role && b.role !== 'admin'))) fail(400, 'You cannot disable or demote yourself');
@@ -256,6 +292,122 @@ async function updateUser(req, env, me, id) {
   ).run();
   if (b.password) await setPassword(env, id, b.password);
   return json({ ok: true });
+}
+
+// ---------------------------------------------------------------------------
+// FieldOne account sync
+//
+// STs and BDOs become reps under their ASM, ASMs managers under their RSM, RSMs
+// managers, and RSM rows for a whole zone (NSH / SH / NH) become sales heads.
+// Synced accounts are matched by FieldOne id, then by username, so a promotion
+// (BDO row closed, new ASM row) keeps the same Dealer Dash account and visits.
+// Accounts created by hand in Dealer Dash are never touched.
+
+const FIELDONE_SHEETS = ['RSMs', 'ASMs', 'STs', 'BDOs'];
+const ROLE_RANK = { rep: 1, manager: 2, head: 3 };
+
+async function readFieldOneSheet(env, sheet) {
+  if (!env.FIELDONE_URL) fail(500, 'FIELDONE_URL is not configured');
+  const res = await fetch(`${env.FIELDONE_URL}/sheets/read?sheet=${encodeURIComponent(sheet)}`);
+  if (!res.ok) fail(502, `FieldOne ${sheet} sheet: HTTP ${res.status}`);
+  const data = await res.json().catch(() => null);
+  if (!data || data.error) fail(502, `FieldOne ${sheet} sheet: ${data?.error?.message || 'unreadable response'}`);
+  const [head = [], ...rows] = data.values || [];
+  return rows.filter((r) => r.some((c) => c !== '' && c != null))
+    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ''])));
+}
+
+// Same rules FieldOne's own login uses: a blank status counts as active, and an
+// RSM row whose region is a whole zone is a head.
+const isLiveRow = (r) => !['inactive', 'purged', 'vacant'].includes(String(r.status || '').trim().toLowerCase())
+  && String(r.username || '').trim() && String(r.password || '').trim();
+const isHeadRow = (r) => ['all india', 'all', 'south', 'north'].includes(String(r.region || '').trim().toLowerCase());
+
+async function syncFieldOne(env) {
+  const sheets = {};
+  for (const s of FIELDONE_SHEETS) sheets[s] = await readFieldOneSheet(env, s); // any failure → nothing changes
+
+  // One Dealer Dash account per username; if someone is in two sheets the higher role wins.
+  const wanted = new Map();
+  const add = (sheet, r, role, managerExt) => {
+    const login = String(r.username).trim();
+    const prev = wanted.get(login.toLowerCase());
+    if (prev && ROLE_RANK[prev.role] >= ROLE_RANK[role]) return;
+    wanted.set(login.toLowerCase(), {
+      ext_id: `${sheet}:${r.id}`, login, name: str(r.name, 80) || login, role, managerExt,
+      region: str(r.region, 60), password: r.password,
+    });
+  };
+  for (const r of sheets.RSMs.filter(isLiveRow)) add('RSMs', r, isHeadRow(r) ? 'head' : 'manager', !isHeadRow(r) && r.rsmId ? `RSMs:${r.rsmId}` : null);
+  for (const r of sheets.ASMs.filter(isLiveRow)) add('ASMs', r, 'manager', r.rsmId ? `RSMs:${r.rsmId}` : null);
+  for (const r of sheets.STs.filter(isLiveRow)) add('STs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
+  for (const r of sheets.BDOs.filter(isLiveRow)) add('BDOs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
+
+  const existing = (await env.DB.prepare('SELECT * FROM users').all()).results;
+  const synced = existing.filter((u) => u.source === 'fieldone');
+  const activeSynced = synced.filter((u) => u.active).length;
+  // A half-empty read of the sheets must never lock out half the field force.
+  if (activeSynced >= 20 && wanted.size < activeSynced * 0.6) {
+    fail(502, `FieldOne returned only ${wanted.size} active staff but ${activeSynced} are active here. Sync stopped to be safe.`);
+  }
+
+  const byId = new Map(existing.map((u) => [u.id, u]));
+  const byExt = new Map(synced.filter((u) => u.ext_id).map((u) => [u.ext_id, u]));
+  const byLogin = new Map(existing.map((u) => [u.login.toLowerCase(), u]));
+  const key = await syncedPasswordKey(env);
+  const stmts = [];
+  const extToId = new Map();
+  const result = { added: 0, updated: 0, disabled: 0, unchanged: 0, managersChanged: 0, withoutManager: 0, skipped: [] };
+
+  for (const w of wanted.values()) {
+    let u = byExt.get(w.ext_id);
+    const owner = byLogin.get(w.login.toLowerCase());
+    if (!u && owner?.source === 'fieldone') u = owner;
+    if (owner && owner !== u) { result.skipped.push(w.login); continue; } // username already used by a hand-made account
+    const hash = await syncedPasswordHash(env, w.password, key);
+    if (u) {
+      extToId.set(w.ext_id, u.id);
+      const same = u.login === w.login && u.name === w.name && u.role === w.role && (u.region || null) === w.region
+        && u.pass_salt === SYNCED_SALT && u.pass_hash === hash && u.active === 1 && u.ext_id === w.ext_id;
+      if (same) { result.unchanged++; continue; }
+      stmts.push(env.DB.prepare('UPDATE users SET login = ?, name = ?, role = ?, region = ?, pass_salt = ?, pass_hash = ?, active = 1, ext_id = ? WHERE id = ?')
+        .bind(w.login, w.name, w.role, w.region, SYNCED_SALT, hash, w.ext_id, u.id));
+      result.updated++;
+    } else {
+      const id = crypto.randomUUID();
+      extToId.set(w.ext_id, id);
+      stmts.push(env.DB.prepare("INSERT INTO users (id, login, name, role, region, pass_salt, pass_hash, source, ext_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'fieldone', ?)")
+        .bind(id, w.login, w.name, w.role, w.region, SYNCED_SALT, hash, w.ext_id));
+      result.added++;
+    }
+  }
+
+  const kept = new Set(extToId.values());
+  for (const u of synced) {
+    if (u.active && !kept.has(u.id)) {
+      stmts.push(env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(u.id));
+      result.disabled++;
+    }
+  }
+
+  // Reporting lines last, once every account exists.
+  for (const w of wanted.values()) {
+    const id = extToId.get(w.ext_id);
+    if (!id) continue;
+    const mgr = (w.managerExt && extToId.get(w.managerExt)) || null;
+    if (!mgr && w.role !== 'head') result.withoutManager++;
+    if ((byId.get(id)?.manager_id ?? null) !== mgr) {
+      stmts.push(env.DB.prepare('UPDATE users SET manager_id = ? WHERE id = ?').bind(mgr, id));
+      if (byId.has(id)) result.managersChanged++;
+    }
+  }
+
+  for (let i = 0; i < stmts.length; i += 100) await env.DB.batch(stmts.slice(i, i + 100));
+
+  result.active = extToId.size;
+  result.at = new Date().toISOString();
+  await env.DB.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('fieldone_sync', ?)").bind(JSON.stringify(result)).run();
+  return result;
 }
 
 // ---------------------------------------------------------------------------
