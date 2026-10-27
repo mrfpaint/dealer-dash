@@ -21,9 +21,9 @@ Data is in D1 (`dealer-dash`) and photos are in R2 (`dealer-dash-photos`). No bu
 
 ## Accounts come from FieldOne
 
-Staff log in with their **FieldOne username and password**. The Worker reads FieldOne's STs, BDOs, ASMs and
-RSMs sheets (through `FIELDONE_URL`) every night at 02:00 IST, and whenever an admin presses **Sync from
-FieldOne now** on the Users page:
+Staff log in with their **FieldOne username and password**. The Worker reads the STs, BDOs, ASMs and RSMs
+tables straight from FieldOne's D1 database (`fieldone`, bound as `FIELDONE_DB`; Dealer Dash only reads it)
+every night at 02:00 IST, and whenever an admin presses **Sync from FieldOne now** on the Users page:
 
 | FieldOne | Dealer Dash |
 |---|---|

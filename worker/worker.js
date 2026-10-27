@@ -3,8 +3,8 @@
 // Bindings (see wrangler.toml): DB (D1), PHOTOS (R2, optional).
 // Secret: TOKEN_SECRET.
 // Var: ALLOWED_ORIGINS — sites allowed to call the API (GitHub Pages + local dev).
-// Var: FIELDONE_URL — FieldOne worker whose staff sheets supply most user accounts
-//      (synced nightly by the cron trigger and on demand from the Users page).
+// Binding: FIELDONE_DB — FieldOne's D1 database, whose staff tables supply most user
+//      accounts (synced nightly by the cron trigger and on demand from the Users page).
 
 const TOKEN_DAYS = 30;            // long, so reps stay logged in while offline
 const PBKDF2_ITER = 50000;        // kept moderate for the Workers CPU limit
@@ -303,18 +303,15 @@ async function updateUser(req, env, me, id) {
 // (BDO row closed, new ASM row) keeps the same Dealer Dash account and visits.
 // Accounts created by hand in Dealer Dash are never touched.
 
-const FIELDONE_SHEETS = ['RSMs', 'ASMs', 'STs', 'BDOs'];
+const FIELDONE_TABLES = ['RSMs', 'ASMs', 'STs', 'BDOs'];
 const ROLE_RANK = { rep: 1, manager: 2, head: 3 };
 
-async function readFieldOneSheet(env, sheet) {
-  if (!env.FIELDONE_URL) fail(500, 'FIELDONE_URL is not configured');
-  const res = await fetch(`${env.FIELDONE_URL}/sheets/read?sheet=${encodeURIComponent(sheet)}`);
-  if (!res.ok) fail(502, `FieldOne ${sheet} sheet: HTTP ${res.status}`);
-  const data = await res.json().catch(() => null);
-  if (!data || data.error) fail(502, `FieldOne ${sheet} sheet: ${data?.error?.message || 'unreadable response'}`);
-  const [head = [], ...rows] = data.values || [];
-  return rows.filter((r) => r.some((c) => c !== '' && c != null))
-    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ''])));
+// Rows come back as the same text the FieldOne app sees (NULL → '').
+async function readFieldOneTable(env, table) {
+  if (!env.FIELDONE_DB) fail(500, 'FIELDONE_DB binding is not configured');
+  if (!FIELDONE_TABLES.includes(table)) fail(500, 'Unknown FieldOne table');
+  const { results } = await env.FIELDONE_DB.prepare(`SELECT * FROM ${table}`).all();
+  return results.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v)])));
 }
 
 // Same rules FieldOne's own login uses: a blank status counts as active, and an
@@ -324,29 +321,29 @@ const isLiveRow = (r) => !['inactive', 'purged', 'vacant'].includes(String(r.sta
 const isHeadRow = (r) => ['all india', 'all', 'south', 'north'].includes(String(r.region || '').trim().toLowerCase());
 
 async function syncFieldOne(env) {
-  const sheets = {};
-  for (const s of FIELDONE_SHEETS) sheets[s] = await readFieldOneSheet(env, s); // any failure → nothing changes
+  const tables = {};
+  for (const t of FIELDONE_TABLES) tables[t] = await readFieldOneTable(env, t); // any failure → nothing changes
 
-  // One Dealer Dash account per username; if someone is in two sheets the higher role wins.
+  // One Dealer Dash account per username; if someone is in two tables the higher role wins.
   const wanted = new Map();
-  const add = (sheet, r, role, managerExt) => {
+  const add = (table, r, role, managerExt) => {
     const login = String(r.username).trim();
     const prev = wanted.get(login.toLowerCase());
     if (prev && ROLE_RANK[prev.role] >= ROLE_RANK[role]) return;
     wanted.set(login.toLowerCase(), {
-      ext_id: `${sheet}:${r.id}`, login, name: str(r.name, 80) || login, role, managerExt,
+      ext_id: `${table}:${r.id}`, login, name: str(r.name, 80) || login, role, managerExt,
       region: str(r.region, 60), password: r.password,
     });
   };
-  for (const r of sheets.RSMs.filter(isLiveRow)) add('RSMs', r, isHeadRow(r) ? 'head' : 'manager', !isHeadRow(r) && r.rsmId ? `RSMs:${r.rsmId}` : null);
-  for (const r of sheets.ASMs.filter(isLiveRow)) add('ASMs', r, 'manager', r.rsmId ? `RSMs:${r.rsmId}` : null);
-  for (const r of sheets.STs.filter(isLiveRow)) add('STs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
-  for (const r of sheets.BDOs.filter(isLiveRow)) add('BDOs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
+  for (const r of tables.RSMs.filter(isLiveRow)) add('RSMs', r, isHeadRow(r) ? 'head' : 'manager', !isHeadRow(r) && r.rsmId ? `RSMs:${r.rsmId}` : null);
+  for (const r of tables.ASMs.filter(isLiveRow)) add('ASMs', r, 'manager', r.rsmId ? `RSMs:${r.rsmId}` : null);
+  for (const r of tables.STs.filter(isLiveRow)) add('STs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
+  for (const r of tables.BDOs.filter(isLiveRow)) add('BDOs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
 
   const existing = (await env.DB.prepare('SELECT * FROM users').all()).results;
   const synced = existing.filter((u) => u.source === 'fieldone');
   const activeSynced = synced.filter((u) => u.active).length;
-  // A half-empty read of the sheets must never lock out half the field force.
+  // A half-empty read of FieldOne must never lock out half the field force.
   if (activeSynced >= 20 && wanted.size < activeSynced * 0.6) {
     fail(502, `FieldOne returned only ${wanted.size} active staff but ${activeSynced} are active here. Sync stopped to be safe.`);
   }

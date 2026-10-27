@@ -6,8 +6,6 @@ compatibility_date = "2026-01-01"
 # and calls this Worker cross-origin. The second entry is for local testing (see README).
 [vars]
 ALLOWED_ORIGINS = "https://mrfpaint.github.io,http://localhost:8796"
-# FieldOne (isc-tracker) worker; its STs / BDOs / ASMs / RSMs sheets are the source of user accounts.
-FIELDONE_URL = "https://mrf-isc-tracker.jofran81.workers.dev"
 
 # Nightly FieldOne account sync, 02:00 IST.
 [triggers]
@@ -19,6 +17,15 @@ crons = ["30 20 * * *"]
 binding = "DB"
 database_name = "dealer-dash"
 database_id = "b074269f-810a-4373-9ee3-a5ee240cbd49"
+
+# FieldOne's own database (isc-tracker). Its STs / BDOs / ASMs / RSMs tables are the
+# source of user accounts. Dealer Dash only ever SELECTs from it.
+# remote = true makes `wrangler dev` read the live FieldOne data too.
+[[d1_databases]]
+binding = "FIELDONE_DB"
+database_name = "fieldone"
+database_id = "4d033bd1-83ac-473e-a075-02169461ca60"
+remote = true
 
 # Shop / visiting-card photos. Created by:  npx wrangler r2 bucket create dealer-dash-photos
 # If R2 is not enabled on the account, delete this block: photos are then kept
