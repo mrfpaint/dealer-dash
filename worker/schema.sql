@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
   id          TEXT PRIMARY KEY,
   login       TEXT NOT NULL UNIQUE COLLATE NOCASE,   -- employee code or mobile
   name        TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('rep','manager','head','admin')),
+  role        TEXT NOT NULL,                        -- st | bdo | asm | rsm | sh | nh | nsh | admin (as in FieldOne)
   manager_id  TEXT REFERENCES users(id),            -- who this person reports to
   region      TEXT,
   pass_salt   TEXT NOT NULL,

@@ -25,12 +25,16 @@ Staff log in with their **FieldOne username and password**. The Worker reads the
 tables straight from FieldOne's D1 database (`fieldone`, bound as `FIELDONE_DB`; Dealer Dash only reads it)
 every night at 02:00 IST, and whenever an admin presses **Sync from FieldOne now** on the Users page:
 
-| FieldOne | Dealer Dash |
-|---|---|
-| ST, BDO | Field rep, reporting to their ASM |
-| ASM | Area manager, reporting to their RSM |
-| RSM | Area manager |
-| RSM row with region All India / South / North (NSH, SH, NH) | Sales head |
+| FieldOne | Dealer Dash role | Reports to | Sees visits of |
+|---|---|---|---|
+| ST / BDO | ST / BDO | their ASM | own |
+| ASM | ASM | their RSM | own + their STs and BDOs |
+| RSM | RSM | SH (South-* regions) or NH (North-*, East-*, West-*) | own + their ASMs' teams |
+| RSM row with region South / North | SH / NH | NSH | their zone |
+| RSM row with region All India | NSH | — | everything |
+
+Admin accounts are Dealer Dash's own (not synced). The login screen is FieldOne's: pick the role, then sign
+in on that role's card. Each card accepts only its own kind of account.
 
 - Only active rows with a username and password are imported. A blank status counts as active, as it does in FieldOne.
 - Passwords ignore upper/lower case, the same as FieldOne.

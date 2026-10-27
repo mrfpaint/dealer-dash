@@ -9,7 +9,22 @@ const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Prad
   'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra',
   'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
-const ROLE_LABEL = { rep: 'Field rep', manager: 'Area manager', head: 'Sales head', admin: 'Admin' };
+// Roles, names and login screens are FieldOne's, so staff see the same thing in both apps.
+const ROLE_LABEL = { st: 'ST', bdo: 'BDO', asm: 'ASM', rsm: 'RSM', sh: 'SH', nh: 'NH', nsh: 'NSH', admin: 'Admin' };
+const ROLE_NAME = {
+  st: 'Sales Technologist', bdo: 'Business Development Officer', asm: 'Area Sales Manager', rsm: 'Regional Sales Manager',
+  sh: 'South Head', nh: 'North Head', nsh: 'National Sales Head', admin: 'System Administrator',
+};
+const LOGIN_SCREENS = [
+  { as: 'nsh', icon: '🏢', label: 'NSH', sub: 'National Sales Head', tagline: 'National Sales Head' },
+  { as: 'shnh', icon: '🏬', label: 'SH / NH', sub: 'South Head / North Head', tagline: 'South Head / North Head' },
+  { as: 'rsm', icon: '🌐', label: 'RSM', sub: 'Regional Sales Manager', tagline: 'Regional Sales Manager' },
+  { as: 'asm', icon: '👥', label: 'ASM', sub: 'Area Sales Manager / ASE / BDM', tagline: 'Area Sales Manager' },
+  { as: 'bdo', icon: '📈', label: 'BDO / ST', sub: 'SE / ST / BDO / BDE', tagline: 'Business Development Officer / Sales Technologist',
+    desc: 'Sign in with your BDO or ST credentials to continue.', user: 'Username (Emp No)', userPh: 'Enter your employee number', button: 'Sign In' },
+  { as: 'admin', icon: '🛡️', label: 'Admin', sub: 'System Administrator', tagline: 'System Administrator · Restricted Access',
+    title: 'Administrator Login', desc: 'This area is restricted to system administrators only.', userPh: 'Admin username', passPh: 'Admin password' },
+];
 const DEALER_TYPES = ['Regular', 'Special', 'Exclusive'];
 const CREDIT_DAYS = [7, 15, 30, 60];
 const CD_PERCENTS = [3.5, 5];
@@ -24,8 +39,9 @@ const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in loc
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const cr = (n) => (n === null || n === undefined || n === '' ? '' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`);
 const yn = (b) => (b === 1 ? 'Yes' : b === 0 ? 'No' : '—');
-const isManager = () => ['manager', 'head', 'admin'].includes(user?.role);
-const isLead = () => ['head', 'admin'].includes(user?.role);
+const isManager = () => ['asm', 'rsm', 'sh', 'nh', 'nsh', 'admin'].includes(user?.role); // dashboard + shortlisting
+const isLead = () => ['sh', 'nh', 'nsh', 'admin'].includes(user?.role);                  // edit brand lists
+const homeFor = (u) => (['rsm', 'sh', 'nh', 'nsh', 'admin'].includes(u.role) ? '#/dashboard' : '#/');
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
 
 function getPath(obj, path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj); }
@@ -197,7 +213,7 @@ function renderNav() {
 }
 
 const routes = [
-  [/^#\/login$/, viewLogin],
+  [/^#\/login(?:\/(\w+))?$/, viewLogin],
   [/^#\/?$/, viewHome],
   [/^#\/new$/, () => viewForm()],
   [/^#\/edit\/([\w-]+)$/, (id) => viewForm(id)],
@@ -209,7 +225,8 @@ const routes = [
 
 async function route() {
   const hash = location.hash || '#/';
-  if (!token && hash !== '#/login') { location.hash = '#/login'; return; }
+  if (!token && !hash.startsWith('#/login')) { location.hash = '#/login'; return; }
+  document.body.classList.toggle('auth', hash.startsWith('#/login'));
   renderNav();
   closeModal();
   for (const [re, fn] of routes) {
@@ -227,38 +244,89 @@ addEventListener('hashchange', route);
 // ---------------------------------------------------------------------------
 // Login / first-time setup
 
-async function viewLogin() {
-  if (token) { location.hash = '#/'; return; }
+// Same screens as FieldOne: "Who are you?" role chooser (#/login), then one sign-in
+// card per role (#/login/<as>). The server only accepts accounts of that role.
+const authLogo = (brand, tagline) => `
+  <div class="auth-logo-wrap">
+    <div class="auth-logo">MRF</div>
+    <div class="auth-brand">${brand}</div>
+    <div class="auth-tagline">${tagline}</div>
+  </div>`;
+const authPage = (inner) => `<div class="auth-page"><div class="auth-wrap"><div class="auth-card">${inner}</div></div></div>`;
+const pwdField = (id, ph) => `
+  <div class="pwd-wrap">
+    <input type="password" class="form-input" id="${id}" name="password" placeholder="${ph}" autocomplete="current-password" required>
+    <button class="pwd-eye" type="button" data-eye="${id}" tabindex="-1">👁</button>
+  </div>`;
+
+async function viewLogin(as) {
+  if (token) { location.hash = homeFor(user); return; }
   let needsSetup = false;
   try { needsSetup = (await api('/api/setup')).needed; } catch { /* offline: show normal login */ }
-  app.innerHTML = `
-    <div class="narrow" style="max-width:420px">
-      <div class="card" style="margin-top:8vh">
-        <h1>${needsSetup ? 'Set up Dealer Dash' : 'Log in'}</h1>
-        ${needsSetup ? '<p class="muted">No users exist yet. Create the first admin account.</p>' : ''}
-        <form id="loginForm">
-          ${needsSetup ? '<label>Your name</label><input name="name" required autocomplete="name">' : ''}
-          <label>Login (employee code or mobile)</label>
-          <input name="login" required autocomplete="username" autocapitalize="none">
-          <label>Password</label>
-          <input name="password" type="password" required minlength="${needsSetup ? 6 : 1}" autocomplete="${needsSetup ? 'new-password' : 'current-password'}">
-          <button class="btn primary block mt">${needsSetup ? 'Create admin and continue' : 'Log in'}</button>
-        </form>
-      </div>
-    </div>`;
+  const screen = LOGIN_SCREENS.find((s) => s.as === as);
+
+  if (needsSetup) {
+    app.innerHTML = authPage(`
+      ${authLogo('Dealer <span>Dash</span>', 'First-time setup')}
+      <div id="loginAlert"></div>
+      <div class="auth-title">Create the admin account</div>
+      <div class="auth-desc">No users exist yet. This account manages Dealer Dash; everyone else signs in with FieldOne.</div>
+      <form id="loginForm">
+        <div class="form-group"><label class="form-label">Your name</label><input class="form-input" name="name" required autocomplete="name"></div>
+        <div class="form-group"><label class="form-label">Username</label><input class="form-input" name="login" required autocapitalize="none"></div>
+        <div class="form-group"><label class="form-label">Password</label>${pwdField('setup-pass', 'At least 6 characters')}</div>
+        <button class="btn-primary">Create admin and continue</button>
+      </form>`);
+  } else if (!screen) {
+    app.innerHTML = authPage(`
+      ${authLogo('MRF<span>VAPOCURE</span> PAINTS', 'DEALER DASH · v1.0')}
+      <div class="auth-title">Who are you?</div>
+      <div class="auth-desc">Select your role to continue.</div>
+      <div class="auth-roles">${LOGIN_SCREENS.map((s) => `
+        <a class="auth-role" href="#/login/${s.as}">${s.icon} ${s.label} Login <small>${s.sub}</small></a>`).join('')}
+      </div>`);
+    return;
+  } else {
+    app.innerHTML = authPage(`
+      ${authLogo(`${screen.label} <span>Login</span>`, screen.tagline)}
+      <div id="loginAlert"></div>
+      <div class="auth-title">${screen.title || 'Welcome back'}</div>
+      <div class="auth-desc">${screen.desc || `Sign in with your ${screen.label} credentials to continue.`}</div>
+      <form id="loginForm">
+        <div class="form-group"><label class="form-label">${screen.user || 'Username'}</label>
+          <input type="text" class="form-input" name="login" placeholder="${screen.userPh || 'Enter your username'}" autocomplete="username" autocapitalize="none" required></div>
+        <div class="form-group"><label class="form-label">Password</label>${pwdField('login-pass', screen.passPh || 'Enter your password')}</div>
+        <button class="btn-primary">${screen.button || `Sign In as ${screen.label}`}</button>
+      </form>
+      <div class="divider">or</div>
+      <div class="link-text"><a href="#/login">← Back to Role Selection</a></div>`);
+  }
+
+  app.querySelectorAll('[data-eye]').forEach((b) => {
+    b.onclick = () => {
+      const input = document.getElementById(b.dataset.eye);
+      input.type = input.type === 'password' ? 'text' : 'password';
+      b.textContent = input.type === 'password' ? '👁' : '🙈';
+    };
+  });
   $('#loginForm').onsubmit = async (e) => {
     e.preventDefault();
-    const btn = e.target.querySelector('button');
+    const btn = e.target.querySelector('button.btn-primary');
+    const alertBox = $('#loginAlert');
+    alertBox.innerHTML = '';
     btn.disabled = true;
     try {
-      const res = await api(needsSetup ? '/api/setup' : '/api/login', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) });
+      const body = Object.fromEntries(new FormData(e.target));
+      if (!needsSetup) body.as = screen.as;
+      const res = await api(needsSetup ? '/api/setup' : '/api/login', { method: 'POST', body });
       token = res.token; user = res.user;
       ls.set('token', token); ls.set('user', user);
       await loadMasters().catch(() => {});
-      location.hash = isLead() ? '#/dashboard' : '#/';
+      location.hash = homeFor(user);
       sync({ quiet: true });
     } catch (err) {
-      toast(err.status ? err.message : 'No network. You need internet to log in the first time.', true);
+      const msg = err.status ? err.message : 'No network. You need internet to sign in the first time.';
+      alertBox.innerHTML = `<div class="alert alert-error">❌ ${esc(msg)}</div>`;
       btn.disabled = false;
     }
   };
@@ -478,7 +546,7 @@ function renderForm() {
     <div class="card section"><h2><span class="num">1</span>Visit</h2>
       <div class="row">
         <div><label>Date of visit</label><input value="${fmtDate(f.visit_date)}" readonly></div>
-        <div><label>Rep</label><input value="${esc(user.name)}" readonly></div>
+        <div><label>Visited by</label><input value="${esc(user.name)} (${ROLE_LABEL[user.role]})" readonly></div>
       </div>
       <label>Shop location (GPS)</label><div class="gps" id="gps">${gpsHtml()}</div>
     </div>
@@ -566,7 +634,7 @@ function renderForm() {
       <label>Interest in becoming an MRF dealer</label>
       ${chips('interest', ['Hot', 'Warm', 'Cold'], { cls: (v) => v.toLowerCase() })}
       ${field('followup_date', 'Follow-up date', { type: 'date' })}
-      ${field('remarks', 'Remarks', { ta: 1, ph: 'Anything the sales head should know' })}
+      ${field('remarks', 'Remarks', { ta: 1, ph: 'Anything management should know' })}
     </div>
   </form>
   <div class="savebar"><div class="inner">
@@ -859,7 +927,7 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard (managers / sales head)
+// Dashboard (ASM, RSM, SH, NH, NSH, Admin)
 
 let filters = ls.get('filters') || {};
 let dashUsers = [];
@@ -879,7 +947,7 @@ async function viewDashboard() {
       <form class="filters" id="filterForm">
         ${inp('q', 'Search (shop, dealer, mobile)')}
         ${inp('from', 'Visited from', 'date')}${inp('to', 'Visited to', 'date')}
-        ${sel('user', dashUsers.filter((u) => u.visits > 0 || u.role === 'rep').map((u) => [u.id, u.name]), 'Rep')}
+        ${sel('user', dashUsers.filter((u) => u.visits > 0).map((u) => [u.id, `${u.name} (${ROLE_LABEL[u.role]})`]), 'Visited by')}
         ${sel('state', STATES, 'State')}
         ${inp('district', 'District')}${inp('town', 'Town / area')}
         ${sel('brand', masters.brands.map((b) => b.name), 'Sells brand')}
@@ -896,7 +964,7 @@ async function viewDashboard() {
     <div class="grid2" id="charts"></div>
     <div class="toolbar"><h2 class="grow" style="margin:0" id="countLbl"></h2></div>
     <div class="scroll-x"><table class="data"><thead><tr>
-      <th>Date</th><th>Shop</th><th>Location</th><th>Brands</th><th class="right">Turnover</th><th>Tinting</th><th>Interest</th><th>Status</th><th>Rep</th>
+      <th>Date</th><th>Shop</th><th>Location</th><th>Brands</th><th class="right">Turnover</th><th>Tinting</th><th>Interest</th><th>Status</th><th>Visited by</th>
     </tr></thead><tbody id="rows"></tbody></table></div>
     <div class="right mt"><button class="btn" id="more" hidden>Load more</button></div>`;
 
@@ -915,7 +983,7 @@ async function viewDashboard() {
       return `<div class="card bars"><h3 style="margin-top:0">${title}</h3>${rows.length ? rows.map((r) =>
         `<div class="bar"><span title="${esc(r.k)}">${esc(r.k)}</span><div class="track"><div class="fill" style="width:${(r.n / max) * 100}%"></div></div><span class="right">${r.n}</span></div>`).join('') : '<div class="muted">No data</div>'}</div>`;
     };
-    $('#charts').innerHTML = bars('Competitor brands at visited shops', s.byBrand) + bars('By state', s.byState) + bars('By rep', s.byRep) + bars('By status', s.byStatus);
+    $('#charts').innerHTML = bars('Competitor brands at visited shops', s.byBrand) + bars('By state', s.byState) + bars('By person', s.byRep) + bars('By status', s.byStatus);
   }
 
   async function loadRows(reset) {
@@ -976,8 +1044,8 @@ async function viewUsers() {
   if (user.role !== 'admin') { location.hash = '#/'; return; }
   const { users } = await api('/api/users');
   const byId = Object.fromEntries(users.map((u) => [u.id, u]));
-  const managers = users.filter((u) => u.role !== 'rep' && u.active);
-  const roleOpts = (cur) => Object.entries(ROLE_LABEL).map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
+  const managers = users.filter((u) => !['st', 'bdo'].includes(u.role) && u.active);
+  const roleOpts = (cur) => Object.entries(ROLE_LABEL).map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l} — ${ROLE_NAME[v]}</option>`).join('');
   const mgrOpts = (cur, self) => `<option value="">— none —</option>` + managers.filter((m) => m.id !== self)
     .map((m) => `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>${esc(m.name)} (${ROLE_LABEL[m.role]})</option>`).join('');
 
@@ -988,7 +1056,7 @@ async function viewUsers() {
     <h1>Users</h1>
     <div class="card spaced">
       <div><b>FieldOne accounts:</b> ${synced.filter((u) => u.active).length} active.
-        STs and BDOs log in as reps, ASMs and RSMs as managers, and NSH/SH/NH as sales heads, with the same username and password as FieldOne.<br>
+        ST, BDO, ASM, RSM, SH, NH and NSH accounts, reporting lines and passwords are copied from FieldOne.<br>
         <span class="muted">${last ? `Last synced ${new Date(last.at).toLocaleString('en-IN')}: ${last.added} added, ${last.updated} updated, ${last.disabled} disabled${last.skipped?.length ? `, ${last.skipped.length} skipped (username already used here: ${esc(last.skipped.join(', '))})` : ''}.` : 'Not synced yet.'}
         Syncs automatically every night.</span></div>
       <button class="btn primary" id="syncBtn">Sync from FieldOne now</button>
@@ -997,13 +1065,13 @@ async function viewUsers() {
       <form id="addUser" class="filters">
         <div><label>Name</label><input name="name" required></div>
         <div><label>Login (emp code / mobile)</label><input name="login" required autocapitalize="none"></div>
-        <div><label>Role</label><select name="role">${roleOpts('rep')}</select></div>
+        <div><label>Role</label><select name="role">${roleOpts('st')}</select></div>
         <div><label>Reports to</label><select name="manager_id">${mgrOpts('')}</select></div>
         <div><label>Region</label><input name="region" placeholder="e.g. Kerala South"></div>
         <div><label>Password</label><input name="password" required minlength="6" placeholder="min 6 characters"></div>
         <div style="align-self:end"><button class="btn primary block">Add user</button></div>
       </form>
-      <div class="hint">For people who are not in FieldOne. Managers see visits by everyone who reports to them, directly or through others. The sales head and admins see everything.</div>
+      <div class="hint">For people who are not in FieldOne. ASM, RSM, SH and NH see visits by everyone who reports to them, directly or through others. NSH and Admin see everything.</div>
     </div>
     <div class="toolbar"><input id="userSearch" placeholder="Search name, login, region…" style="max-width:320px"></div>
     <div class="scroll-x"><table class="data"><thead><tr><th>Name</th><th>Login</th><th>Role</th><th>Reports to</th><th>Region</th><th class="right">Visits</th><th>Status</th></tr></thead>
@@ -1067,7 +1135,7 @@ async function viewUsers() {
 }
 
 // ---------------------------------------------------------------------------
-// Brands master (sales head / admin)
+// Brands master (SH, NH, NSH, Admin)
 
 async function viewBrands() {
   if (!isLead()) { location.hash = '#/'; return; }
@@ -1089,7 +1157,7 @@ async function viewBrands() {
           <button class="btn small" data-brand="${b.id}" data-do="toggle-brand">${b.active ? 'Hide brand' : 'Show brand'}</button></div>
         ${['special', 'exclusive'].map((k) => `
           <h3>${k === 'special' ? 'Special dealer classifications' : 'Exclusive outlet types'}</h3>
-          <ul class="list" style="margin:0">${b.options.filter((o) => o.kind === k).map(optRow).join('') || '<li class="muted" style="box-shadow:none;padding:.2rem 0;cursor:default">None yet. Reps can type one in.</li>'}</ul>
+          <ul class="list" style="margin:0">${b.options.filter((o) => o.kind === k).map(optRow).join('') || '<li class="muted" style="box-shadow:none;padding:.2rem 0;cursor:default">None yet. STs and BDOs can type one in.</li>'}</ul>
           <form class="chips mt" data-add="${b.id}" data-kind="${k}" style="flex-wrap:nowrap">
             <input name="name" placeholder="Add ${k === 'special' ? 'classification' : 'outlet type'}…"><button class="btn small">Add</button></form>`).join('')}
       </div>`).join('')}</div>
@@ -1142,7 +1210,7 @@ function viewAccount() {
     <div class="narrow">
       <h1>Account</h1>
       <div class="card"><dl class="kv"><dt>Name</dt><dd>${esc(user.name)}</dd><dt>Login</dt><dd>${esc(user.login)}</dd>
-        <dt>Role</dt><dd>${ROLE_LABEL[user.role]}</dd>${user.region ? `<dt>Region</dt><dd>${esc(user.region)}</dd>` : ''}</dl></div>
+        <dt>Role</dt><dd>${ROLE_LABEL[user.role]} — ${ROLE_NAME[user.role]}</dd>${user.region ? `<dt>Region</dt><dd>${esc(user.region)}</dd>` : ''}</dl></div>
       ${user.source === 'fieldone'
         ? '<div class="card"><h2>Password</h2><p class="muted" style="margin:0">You log in with your FieldOne username and password. To change it, change it in FieldOne; Dealer Dash picks it up overnight.</p></div>'
         : `<div class="card"><h2>Change password</h2>

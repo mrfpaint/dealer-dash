@@ -10,7 +10,19 @@ const TOKEN_DAYS = 30;            // long, so reps stay logged in while offline
 const PBKDF2_ITER = 50000;        // kept moderate for the Workers CPU limit
 const MAX_PHOTO_BYTES = 1_500_000;
 
-const ROLES = ['rep', 'manager', 'head', 'admin'];
+// Same roles and names as FieldOne.
+const ROLES = ['st', 'bdo', 'asm', 'rsm', 'sh', 'nh', 'nsh', 'admin'];
+const MANAGER_ROLES = ['asm', 'rsm', 'sh', 'nh', 'nsh', 'admin']; // dashboard + shortlisting
+const HEAD_ROLES = ['sh', 'nh', 'nsh', 'admin'];                  // edit brand lists
+// Each FieldOne login screen only accepts its own kind of account.
+const LOGIN_SCREENS = {
+  nsh: { roles: ['nsh'], label: 'NSH' },
+  shnh: { roles: ['sh', 'nh'], label: 'SH / NH' },
+  rsm: { roles: ['rsm'], label: 'RSM' },
+  asm: { roles: ['asm'], label: 'ASM' },
+  bdo: { roles: ['bdo', 'st'], label: 'BDO / ST' },
+  admin: { roles: ['admin'], label: 'Admin' },
+};
 const STATUSES = ['New', 'Shortlisted', 'In talks', 'Converted', 'Not suitable'];
 const TINTING_BRANDS = ['COROB', 'AGS', 'Idex', 'Santint', 'Fast & Fluid', 'Others'];
 const PAYMENT_MODES = ['Cheque', 'RTGS / NEFT', 'UPI', 'Cash', 'Others'];
@@ -198,7 +210,7 @@ async function authenticate(req, env) {
 const publicUser = (u) => ({
   id: u.id, login: u.login, name: u.name, role: u.role, manager_id: u.manager_id, region: u.region, active: u.active, source: u.source || null,
 });
-const isLead = (u) => u.role === 'head' || u.role === 'admin';
+const isLead = (u) => u.role === 'nsh' || u.role === 'admin'; // sees every visit
 const requireRole = (u, ...roles) => { if (!roles.includes(u.role)) fail(403, 'Not allowed for your role'); };
 
 async function setup(req, env) {
@@ -210,9 +222,17 @@ async function setup(req, env) {
 
 async function login(req, env) {
   const b = await body(req);
+  const screen = LOGIN_SCREENS[b.as];
+  if (!screen) fail(400, 'Choose your role first');
+  const bad = `Invalid ${screen.label} credentials.`;
   const user = await env.DB.prepare('SELECT * FROM users WHERE login = ?').bind(String(b.login || '').trim()).first();
-  if (!user || !user.active) fail(401, 'Wrong login or password');
-  if (!(await passwordMatches(env, user, b.password || ''))) fail(401, 'Wrong login or password');
+  if (!user || !user.active) fail(401, bad);
+  if (!(await passwordMatches(env, user, b.password || ''))) fail(401, bad);
+  if (!screen.roles.includes(user.role)) {
+    const own = Object.values(LOGIN_SCREENS).find((s) => s.roles.includes(user.role));
+    // "an" before letters whose name starts with a vowel sound: an ASM, an RSM, an NSH, a BDO.
+    fail(401, `This is ${/^[AEFHILMNORSX]/.test(own.label) ? 'an' : 'a'} ${own.label} account — please use the ${own.label} login.`);
+  }
   return json({ token: await makeToken(env, user.id), user: publicUser(user) });
 }
 
@@ -297,14 +317,16 @@ async function updateUser(req, env, me, id) {
 // ---------------------------------------------------------------------------
 // FieldOne account sync
 //
-// STs and BDOs become reps under their ASM, ASMs managers under their RSM, RSMs
-// managers, and RSM rows for a whole zone (NSH / SH / NH) become sales heads.
+// Roles and reporting lines are FieldOne's: ST and BDO under their ASM, ASM under
+// their RSM. RSM rows whose region is a whole zone are the heads (All India → NSH,
+// South → SH, North → NH). Like FieldOne, a South-* RSM falls under SH, a North-*,
+// East-* or West-* RSM under NH, and SH / NH under NSH.
 // Synced accounts are matched by FieldOne id, then by username, so a promotion
 // (BDO row closed, new ASM row) keeps the same Dealer Dash account and visits.
 // Accounts created by hand in Dealer Dash are never touched.
 
 const FIELDONE_TABLES = ['RSMs', 'ASMs', 'STs', 'BDOs'];
-const ROLE_RANK = { rep: 1, manager: 2, head: 3 };
+const ROLE_RANK = { st: 1, bdo: 1, asm: 2, rsm: 3, sh: 4, nh: 4, nsh: 5 };
 
 // Rows come back as the same text the FieldOne app sees (NULL → '').
 async function readFieldOneTable(env, table) {
@@ -318,7 +340,17 @@ async function readFieldOneTable(env, table) {
 // RSM row whose region is a whole zone is a head.
 const isLiveRow = (r) => !['inactive', 'purged', 'vacant'].includes(String(r.status || '').trim().toLowerCase())
   && String(r.username || '').trim() && String(r.password || '').trim();
-const isHeadRow = (r) => ['all india', 'all', 'south', 'north'].includes(String(r.region || '').trim().toLowerCase());
+function rsmRole(r) {
+  const g = String(r.region || '').trim().toLowerCase();
+  return g === 'all india' || g === 'all' ? 'nsh' : g === 'south' ? 'sh' : g === 'north' ? 'nh' : 'rsm';
+}
+// FieldOne's ZONE_PREFIXES: which head an ordinary RSM falls under, by region.
+function zoneHeadRole(r) {
+  const g = String(r.region || '').trim().toLowerCase();
+  if (g.startsWith('south')) return 'sh';
+  if (['north', 'east', 'west'].some((p) => g.startsWith(p))) return 'nh';
+  return 'nsh';
+}
 
 async function syncFieldOne(env) {
   const tables = {};
@@ -335,10 +367,18 @@ async function syncFieldOne(env) {
       region: str(r.region, 60), password: r.password,
     });
   };
-  for (const r of tables.RSMs.filter(isLiveRow)) add('RSMs', r, isHeadRow(r) ? 'head' : 'manager', !isHeadRow(r) && r.rsmId ? `RSMs:${r.rsmId}` : null);
-  for (const r of tables.ASMs.filter(isLiveRow)) add('ASMs', r, 'manager', r.rsmId ? `RSMs:${r.rsmId}` : null);
-  for (const r of tables.STs.filter(isLiveRow)) add('STs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
-  for (const r of tables.BDOs.filter(isLiveRow)) add('BDOs', r, 'rep', r.asmId ? `ASMs:${r.asmId}` : null);
+  const rsms = tables.RSMs.filter(isLiveRow);
+  const headExt = (role) => { const h = rsms.find((r) => rsmRole(r) === role); return h ? `RSMs:${h.id}` : null; };
+  for (const r of rsms) {
+    const role = rsmRole(r);
+    const mgr = role === 'nsh' ? null
+      : role === 'sh' || role === 'nh' ? headExt('nsh')
+      : r.rsmId ? `RSMs:${r.rsmId}` : headExt(zoneHeadRole(r)) || headExt('nsh');
+    add('RSMs', r, role, mgr);
+  }
+  for (const r of tables.ASMs.filter(isLiveRow)) add('ASMs', r, 'asm', r.rsmId ? `RSMs:${r.rsmId}` : null);
+  for (const r of tables.STs.filter(isLiveRow)) add('STs', r, 'st', r.asmId ? `ASMs:${r.asmId}` : null);
+  for (const r of tables.BDOs.filter(isLiveRow)) add('BDOs', r, 'bdo', r.asmId ? `ASMs:${r.asmId}` : null);
 
   const existing = (await env.DB.prepare('SELECT * FROM users').all()).results;
   const synced = existing.filter((u) => u.source === 'fieldone');
@@ -392,7 +432,7 @@ async function syncFieldOne(env) {
     const id = extToId.get(w.ext_id);
     if (!id) continue;
     const mgr = (w.managerExt && extToId.get(w.managerExt)) || null;
-    if (!mgr && w.role !== 'head') result.withoutManager++;
+    if (!mgr && w.role !== 'nsh') result.withoutManager++;
     if ((byId.get(id)?.manager_id ?? null) !== mgr) {
       stmts.push(env.DB.prepare('UPDATE users SET manager_id = ? WHERE id = ?').bind(mgr, id));
       if (byId.has(id)) result.managersChanged++;
@@ -420,7 +460,7 @@ async function masters(env) {
 }
 
 async function saveBrand(req, env, me) {
-  if (!isLead(me)) fail(403, 'Only the sales head or admin can edit brands');
+  if (!HEAD_ROLES.includes(me.role)) fail(403, 'Only NSH, SH, NH or Admin can edit brands');
   const b = await body(req);
   const name = str(b.name, 60);
   if (!name) fail(400, 'Brand name is required');
@@ -434,7 +474,7 @@ async function saveBrand(req, env, me) {
 }
 
 async function saveBrandOption(req, env, me) {
-  if (!isLead(me)) fail(403, 'Only the sales head or admin can edit brands');
+  if (!HEAD_ROLES.includes(me.role)) fail(403, 'Only NSH, SH, NH or Admin can edit brands');
   const b = await body(req);
   const name = str(b.name, 60);
   if (!name) fail(400, 'Name is required');
@@ -628,7 +668,7 @@ async function getVisit(env, me, id) {
 }
 
 async function setStatus(req, env, me, id) {
-  requireRole(me, 'manager', 'head', 'admin');
+  requireRole(me, ...MANAGER_ROLES);
   await visibleVisit(env, me, id);
   const b = await body(req);
   if (!STATUSES.includes(b.status)) fail(400, 'Invalid status');
@@ -670,7 +710,7 @@ async function summary(env, me, q) {
 }
 
 const EXPORT_COLS = [
-  ['Visit date', 'visit_date'], ['Rep', 'rep_name'], ['Shop name', 'shop_name'], ['Dealer name', 'owner_name'],
+  ['Visit date', 'visit_date'], ['Visited by', 'rep_name'], ['Shop name', 'shop_name'], ['Dealer name', 'owner_name'],
   ['Address', 'address'], ['Area', 'area'], ['Town', 'town'], ['District', 'district'], ['State', 'state'],
   ['Pincode', 'pincode'], ['Mobile 1', 'mobile1'], ['Mobile 2', 'mobile2'], ['Landline', 'landline'],
   ['Brands sold', (v) => v.brands.map(brandLabel).join('; ')],

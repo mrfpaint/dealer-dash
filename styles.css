@@ -166,3 +166,38 @@ dl.kv dd { margin: 0; word-break: break-word; }
 .spaced { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .mt { margin-top: 1rem; }
 [hidden] { display: none !important; }
+
+/* ---- Login: copied from FieldOne so both apps sign in the same way ---- */
+body.auth { background: #f8f9fc; }
+body.auth .topbar { display: none; }
+body.auth .container { max-width: none; padding: 0; }
+.auth-page { font-family: 'DM Sans', system-ui, sans-serif; font-size: 14px; color: #1f2937; --dark: #1a1a2e; --dark2: #16213e; --gray: #6b7280; --border: #e5e7eb; }
+.auth-wrap { min-height: 100vh; background: linear-gradient(135deg, var(--dark), #0f3460, var(--dark2)); display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.auth-card { background: white; border-radius: 20px; padding: 36px 28px; width: 100%; max-width: 400px; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.auth-logo-wrap { text-align: center; margin-bottom: 24px; }
+.auth-logo { width: 56px; height: 56px; background: linear-gradient(135deg, var(--brand), var(--brand-dark)); border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 20px; color: white; margin-bottom: 12px; box-shadow: 0 8px 20px rgba(200, 16, 46, .3); }
+.auth-brand { font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700; color: var(--dark); }
+.auth-brand span { color: var(--brand); }
+.auth-tagline { font-size: 12px; color: var(--gray); margin-top: 4px; }
+.auth-title { font-size: 18px; font-weight: 600; color: var(--dark); margin-bottom: 6px; }
+.auth-desc { font-size: 13px; color: var(--gray); margin-bottom: 24px; line-height: 1.5; }
+.auth-roles { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.auth-role { text-decoration: none; width: 100%; padding: 12px; background: white; color: var(--dark); border: 1.5px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.auth-role small { font-size: 11px; color: var(--gray); font-weight: 400; }
+.auth-page .form-group { margin-bottom: 16px; }
+.auth-page .form-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin: 0 0 6px; letter-spacing: .3px; text-transform: uppercase; }
+.auth-page .form-input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--dark); background: white; outline: none; -webkit-appearance: none; transition: border-color .2s; }
+.auth-page .form-input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(200, 16, 46, .1); outline: none; }
+.auth-page .pwd-wrap { position: relative; }
+.auth-page .pwd-wrap .form-input { padding-right: 44px; }
+.auth-page .pwd-eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 18px; color: var(--gray); padding: 4px; line-height: 1; }
+.auth-page .btn-primary { width: 100%; padding: 12px; background: linear-gradient(135deg, var(--brand), var(--brand-dark)); color: white; border: none; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s; box-shadow: 0 4px 12px rgba(200, 16, 46, .3); }
+.auth-page .btn-primary:hover { transform: translateY(-1px); }
+.auth-page .btn-primary:disabled { opacity: .6; cursor: not-allowed; transform: none; }
+.auth-page .divider { text-align: center; color: var(--gray); font-size: 12px; margin: 16px 0; position: relative; }
+.auth-page .divider::before, .auth-page .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: var(--border); }
+.auth-page .divider::before { left: 0; } .auth-page .divider::after { right: 0; }
+.auth-page .link-text { text-align: center; font-size: 13px; color: var(--gray); }
+.auth-page .link-text a { color: var(--brand); text-decoration: none; font-weight: 600; cursor: pointer; }
+.auth-page .alert { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+.auth-page .alert-error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
