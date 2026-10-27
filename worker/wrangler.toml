@@ -1,0 +1,26 @@
+name = "dealer-dash"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# API only. The app itself is published on GitHub Pages (mrfpaint.github.io/dealer-dash)
+# and calls this Worker cross-origin. The second entry is for local testing (see README).
+[vars]
+ALLOWED_ORIGINS = "https://mrfpaint.github.io,http://localhost:8796"
+
+# Created by:  npx wrangler d1 create dealer-dash
+# Paste the database_id it prints into the field below.
+[[d1_databases]]
+binding = "DB"
+database_name = "dealer-dash"
+database_id = "b074269f-810a-4373-9ee3-a5ee240cbd49"
+
+# Shop / visiting-card photos. Created by:  npx wrangler r2 bucket create dealer-dash-photos
+# If R2 is not enabled on the account, delete this block: photos are then kept
+# in D1 instead (fine for a few thousand visits).
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "dealer-dash-photos"
+
+# Secrets are NOT set here — they would end up in git. Set them with:
+#   npx wrangler secret put TOKEN_SECRET     (any long random string)
+# For local dev put TOKEN_SECRET=... in .dev.vars instead.
