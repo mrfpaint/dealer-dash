@@ -600,7 +600,7 @@ async function saveVisit(req, env, me) {
     turnover_waterproofing: num(v.turnover_waterproofing),
     turnover_industrial: num(v.turnover_industrial),
     turnover_others: num(v.turnover_others),
-    paint_volume: num(v.paint_volume),     // litres per year
+    paint_volume: num(v.paint_volume),     // litres per year; no longer asked, kept so older visits keep their figure
     mix_retail: pct(v.mix_retail),
     mix_contractor: pct(v.mix_contractor),
     mix_architect: pct(v.mix_architect),
@@ -759,7 +759,6 @@ const EXPORT_COLS = [
   ['Non-paint turnover (Lakhs)', 'turnover_nonpaint'], ['Wood (Lakhs)', 'turnover_wood'], ['Metal (Lakhs)', 'turnover_metal'],
   ['Wall (Lakhs)', 'turnover_wall'], ['Waterproofing (Lakhs)', 'turnover_waterproofing'],
   ['Industrial (Lakhs)', 'turnover_industrial'], ['Others (Lakhs)', 'turnover_others'],
-  ['Paint volume (Litres/yr)', 'paint_volume'],
   ['Direct consumer %', 'mix_retail'], ['Contractor %', 'mix_contractor'], ['Architects / projects %', 'mix_architect'],
   ['Industrial / OEM %', 'mix_industrial'],
   ['Contractors / painters associated', 'sec_contractors'], ['Architects associated', 'sec_architects'],

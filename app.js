@@ -415,7 +415,7 @@ function blankVisit() {
     pincode: '', area: '', town: '', district: '', state: '',
     brands: [],
     turnover_total: null, turnover_paint: null, turnover_nonpaint: null, turnover_wood: null, turnover_metal: null, turnover_wall: null,
-    turnover_waterproofing: null, turnover_industrial: null, turnover_others: null, paint_volume: null,
+    turnover_waterproofing: null, turnover_industrial: null, turnover_others: null,
     mix_retail: null, mix_contractor: null, mix_architect: null, mix_industrial: null,
     sec_contractors: null, sec_architects: null,
     has_tinting: null, tinting_machines: [],
@@ -649,10 +649,7 @@ function renderForm() {
         ${field('turnover_industrial', 'Industrial', num(15))}
         ${field('turnover_others', 'Others', num(5))}
       </div>
-      <div class="row">
-        ${field('turnover_paint', 'Paint turnover', num(120, { hint: 'Adds up the six above, or type it if that is all the dealer tells you.' }))}
-        ${field('paint_volume', 'Paint volume (litres/yr)', num('25000', { step: '1', inputmode: 'numeric' }))}
-      </div>
+      ${field('turnover_paint', 'Paint turnover', num(120, { hint: 'Adds up the six above, or type it if that is all the dealer tells you.' }))}
       <h3>4.2 Other non-paint products</h3>
       ${field('turnover_nonpaint', 'Non-paint turnover', num(60, { hint: 'Hardware, sanitary, electrical and other items the shop sells.' }))}
       <div class="row total-row">
@@ -661,10 +658,10 @@ function renderForm() {
       </div>
       <h3>Customer type (% of sales)</h3>
       <div class="row">
-        ${field('mix_retail', 'Direct consumer', num(50))}
-        ${field('mix_contractor', 'Contractor', num(30))}
-        ${field('mix_architect', 'Architects / projects', num(15))}
-        ${field('mix_industrial', 'Industrial / OEM supply', num(5))}
+        ${field('mix_retail', 'Direct consumer', num('50%'))}
+        ${field('mix_contractor', 'Contractor', num('30%'))}
+        ${field('mix_architect', 'Architects / projects', num('15%'))}
+        ${field('mix_industrial', 'Industrial / OEM supply', num('5%'))}
       </div>
       <div class="hint" id="mixTotal">${mixTotalText()}</div>
       <h3>Secondary (number associated)</h3>
@@ -723,7 +720,7 @@ function renderForm() {
       <label>Interest in becoming an MRF dealer</label>
       ${chips('interest', ['Hot', 'Warm', 'Cold'], { cls: (v) => v.toLowerCase() })}
       ${field('followup_date', 'Follow-up date', { type: 'date' })}
-      ${field('remarks', 'Remarks', { ta: 1, ph: 'e.g. Unhappy with current supplier credit terms; open to meeting our ASM next week' })}
+      ${field('remarks', 'Remarks', { ta: 1, ph: 'e.g. Open to meeting our ASM next week' })}
     </div>
   </form>
   <div class="savebar"><div class="inner">
@@ -917,7 +914,6 @@ function validate() {
   if (!f.brands.length) errs.push(['brands', 'Select at least one brand the shop sells']);
   for (const k of [...TURNOVER_PARTS, 'paint', 'nonpaint', 'total']) if (f[`turnover_${k}`] < 0) bad(`turnover_${k}`, 'Turnover cannot be negative');
   if (f.turnover_total != null && f.turnover_paint != null && f.turnover_paint > f.turnover_total + 0.01) bad('turnover_total', 'Total turnover cannot be less than the paint turnover');
-  if (f.paint_volume < 0) bad('paint_volume', 'Paint volume cannot be negative');
   for (const k of MIX_FIELDS) if (f[k] != null && (f[k] < 0 || f[k] > 100)) bad(k, 'Each customer-type share must be between 0 and 100%');
   const mix = mixSum();
   if (mix != null && Math.abs(mix - 100) > 0.5) bad('mix_retail', `Customer-type shares should add up to 100% (now ${mix}%)`);
@@ -1000,7 +996,6 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
           ${kvRow('Paint turnover', [lakh(v.turnover_paint) && `<b>${lakh(v.turnover_paint)}</b>`,
             ...TURNOVER_PARTS.filter((k) => v[`turnover_${k}`] != null).map((k) => `${k[0].toUpperCase() + k.slice(1)} ${lakh(v[`turnover_${k}`])}`)].filter(Boolean).join(' · '))}
           ${kvRow('Non-paint turnover', lakh(v.turnover_nonpaint))}
-          ${kvRow('Paint volume', v.paint_volume != null ? `${Number(v.paint_volume).toLocaleString('en-IN')} litres / year` : '')}
           ${kvRow('Customer type', MIX_FIELDS.filter((k) => v[k] != null).map((k) => `${MIX_LABEL[k]} ${v[k]}%`).join(' · '))}
           ${kvRow('Secondary', [v.sec_contractors != null && `${v.sec_contractors} contractors / painters`, v.sec_architects != null && `${v.sec_architects} architects`].filter(Boolean).join(' · '))}
           ${kvRow('Tinting machine', v.has_tinting === 0 ? 'No' : v.has_tinting !== 1 ? ''
