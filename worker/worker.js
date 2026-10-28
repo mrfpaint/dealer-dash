@@ -1,4 +1,4 @@
-// Dealer Dash — Cloudflare Worker (API for the PWA hosted on GitHub Pages)
+// Dealer Dashboard — Cloudflare Worker (API for the PWA hosted on GitHub Pages)
 //
 // Bindings (see wrangler.toml): DB (D1), PHOTOS (R2, optional).
 // Secret: TOKEN_SECRET.
@@ -32,7 +32,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
-      return new Response('Dealer Dash API. The app is at https://mrfpaint.github.io/dealer-dash/', { status: 404 });
+      return new Response('Dealer Dashboard API. The app is at https://mrfpaint.github.io/dealer-dash/', { status: 404 });
     }
 
     // Browsers must come from an allowed origin. No Origin header (curl) is let
@@ -316,8 +316,8 @@ async function updateUser(req, env, me, id) {
 // South → SH, North → NH). Like FieldOne, a South-* RSM falls under SH, a North-*,
 // East-* or West-* RSM under NH, and SH / NH under NSH.
 // Synced accounts are matched by FieldOne id, then by username, so a promotion
-// (BDO row closed, new ASM row) keeps the same Dealer Dash account and visits.
-// Accounts created by hand in Dealer Dash are never touched.
+// (BDO row closed, new ASM row) keeps the same Dealer Dashboard account and visits.
+// Accounts created by hand in Dealer Dashboard are never touched.
 
 const FIELDONE_TABLES = ['RSMs', 'ASMs', 'STs', 'BDOs'];
 const ROLE_RANK = { st: 1, bdo: 1, asm: 2, rsm: 3, sh: 4, nh: 4, nsh: 5 };
@@ -350,7 +350,7 @@ async function syncFieldOne(env) {
   const tables = {};
   for (const t of FIELDONE_TABLES) tables[t] = await readFieldOneTable(env, t); // any failure → nothing changes
 
-  // One Dealer Dash account per username; if someone is in two tables the higher role wins.
+  // One Dealer Dashboard account per username; if someone is in two tables the higher role wins.
   const wanted = new Map();
   const add = (table, r, role, managerExt) => {
     const login = String(r.username).trim();
