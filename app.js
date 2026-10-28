@@ -1,4 +1,4 @@
-// Dealer Dashboard — single-page PWA. No build step: plain ES modules served as-is.
+// Dealer Universe Mapping — single-page PWA. No build step: plain ES modules served as-is.
 //
 // Offline model: a saved visit goes into an IndexedDB "outbox" (with its photos as
 // Blobs) and is uploaded by sync() whenever the phone is online. Visit ids are made
@@ -279,7 +279,7 @@ async function viewLogin(as) {
       ${authLogo('Dealer <span>Dash</span>', 'First-time setup')}
       <div id="loginAlert"></div>
       <div class="auth-title">Create the admin account</div>
-      <div class="auth-desc">No users exist yet. This account manages Dealer Dashboard; everyone else signs in with FieldOne.</div>
+      <div class="auth-desc">No users exist yet. This account manages Dealer Universe Mapping; everyone else signs in with FieldOne.</div>
       <form id="loginForm">
         <div class="form-group"><label class="form-label">Your name</label><input class="form-input" name="name" required autocomplete="name"></div>
         <div class="form-group"><label class="form-label">Username</label><input class="form-input" name="login" required autocapitalize="none"></div>
@@ -288,7 +288,7 @@ async function viewLogin(as) {
       </form>`);
   } else if (!screen) {
     app.innerHTML = authPage(`
-      ${authLogo('MRF<span>VAPOCURE</span> PAINTS', 'DEALER DASHBOARD · v1.0')}
+      ${authLogo('MRF<span>VAPOCURE</span> PAINTS', 'DEALER UNIVERSE MAPPING · v1.0')}
       <div class="auth-title">Who are you?</div>
       <div class="auth-desc">Select your role to continue.</div>
       <div class="auth-roles">${LOGIN_SCREENS.map((s) => `
@@ -1332,7 +1332,7 @@ function viewAccount() {
       <div class="card"><dl class="kv"><dt>Name</dt><dd>${esc(user.name)}</dd><dt>Login</dt><dd>${esc(user.login)}</dd>
         <dt>Role</dt><dd>${ROLE_LABEL[user.role]} — ${ROLE_NAME[user.role]}</dd>${user.region ? `<dt>Region</dt><dd>${esc(user.region)}</dd>` : ''}</dl></div>
       <div class="card"><h2>Password</h2><p class="muted" style="margin:0">${user.source === 'fieldone'
-        ? 'You log in with your FieldOne username and password. Password changes are made by the admin in FieldOne; Dealer Dashboard picks them up overnight.'
+        ? 'You log in with your FieldOne username and password. Password changes are made by the admin in FieldOne; Dealer Universe Mapping picks them up overnight.'
         : 'Password changes are made by the admin.'}</p></div>
       <div class="card"><h2>Install on your phone</h2>
         <p class="muted" style="margin:0">Android (Chrome): menu ⋮ → <b>Add to Home screen</b>. iPhone (Safari): Share → <b>Add to Home Screen</b>. The app then opens full-screen and works without signal.</p></div>

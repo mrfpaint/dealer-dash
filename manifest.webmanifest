@@ -1,6 +1,6 @@
 {
-  "name": "Dealer Dashboard — MRF Paints",
-  "short_name": "Dealer Dashboard",
+  "name": "Dealer Universe Mapping — MRF Paints",
+  "short_name": "Dealer Universe",
   "description": "Scout and record prospective paint dealers",
   "start_url": "./#/",
   "scope": "./",

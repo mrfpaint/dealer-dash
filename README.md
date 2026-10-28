@@ -1,4 +1,4 @@
-# Dealer Dashboard — MRF Paints
+# Dealer Universe Mapping — MRF Paints
 
 Field app for the sales team to scout competitor paint dealers who could become MRF dealers.
 Reps fill in a visit form at the shop (works offline). Area managers see their team's visits,
@@ -22,10 +22,10 @@ Data is in D1 (`dealer-dash`) and photos are in R2 (`dealer-dash-photos`). No bu
 ## Accounts come from FieldOne
 
 Staff log in with their **FieldOne username and password**. The Worker reads the STs, BDOs, ASMs and RSMs
-tables straight from FieldOne's D1 database (`fieldone`, bound as `FIELDONE_DB`; Dealer Dashboard only reads it)
+tables straight from FieldOne's D1 database (`fieldone`, bound as `FIELDONE_DB`; Dealer Universe Mapping only reads it)
 every night at 02:00 IST, and whenever an admin presses **Sync from FieldOne now** on the Users page:
 
-| FieldOne | Dealer Dashboard role | Reports to | Sees visits of |
+| FieldOne | Dealer Universe Mapping role | Reports to | Sees visits of |
 |---|---|---|---|
 | ST / BDO | ST / BDO | their ASM | own |
 | ASM | ASM | their RSM | own + their STs and BDOs |
@@ -33,17 +33,17 @@ every night at 02:00 IST, and whenever an admin presses **Sync from FieldOne now
 | RSM row with region South / North | SH / NH | NSH | their zone |
 | RSM row with region All India | NSH | — | everything |
 
-Admin accounts are Dealer Dashboard's own (not synced). The login screen is FieldOne's: pick the role, then sign
+Admin accounts are Dealer Universe Mapping's own (not synced). The login screen is FieldOne's: pick the role, then sign
 in on that role's card. Each card accepts only its own kind of account.
 
 - Only active rows with a username and password are imported. A blank status counts as active, as it does in FieldOne.
 - Passwords ignore upper/lower case, the same as FieldOne.
 - New staff are added, and changed passwords, names or managers are updated. People who leave or are marked
   Inactive in FieldOne are disabled; their past visits are kept.
-- Synced accounts are read-only in Dealer Dashboard. Change them in FieldOne.
+- Synced accounts are read-only in Dealer Universe Mapping. Change them in FieldOne.
 - Accounts created by hand on the Users page (admin, ISCs, outsiders) are never touched. If a FieldOne
   username is already used by a hand-made account, that person is skipped and listed on the Users page.
-- Safety brake: if FieldOne suddenly returns far fewer active staff than Dealer Dashboard has, the sync stops
+- Safety brake: if FieldOne suddenly returns far fewer active staff than Dealer Universe Mapping has, the sync stops
   without disabling anyone.
 - Synced passwords are stored as an HMAC keyed by `TOKEN_SECRET`. Hand-made accounts use PBKDF2.
 

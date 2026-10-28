@@ -1,8 +1,8 @@
-// Dealer Dashboard service worker: keeps the app shell available offline.
+// Dealer Universe Mapping service worker: keeps the app shell available offline.
 // API calls are never cached — offline visits are queued in IndexedDB by app.js.
 // Paths are relative so the app works from a sub-folder (mrfpaint.github.io/dealer-dash/).
 // Bump VERSION whenever any file in SHELL changes.
-const VERSION = 'dd-v12';
+const VERSION = 'dd-v13';
 const SHELL = ['./', './index.html', './app.js', './styles.css', './icon.svg', './icon-192.png', './manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
