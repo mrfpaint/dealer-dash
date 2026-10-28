@@ -89,6 +89,9 @@ CREATE TABLE IF NOT EXISTS visits (
   tinting_type    TEXT,                       -- Water based | Dual mode | Both
   tinting_brands  TEXT NOT NULL DEFAULT '[]', -- JSON array
   tinting_brand_other TEXT,
+  -- [{company, company_other, water, dual, brand, brand_other}]: one row per paint company's machines;
+  -- tinting_type / tinting_brands above are worked out from these rows
+  tinting_machines TEXT NOT NULL DEFAULT '[]',
 
   cd_dealer       INTEGER,
   cd_percent      REAL,

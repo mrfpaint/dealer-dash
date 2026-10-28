@@ -76,6 +76,20 @@ textarea { min-height: 80px; resize: vertical; }
 .brand-card { border: 1px solid var(--line); border-radius: 10px; padding: .75rem; margin-top: .65rem; background: #fcfcfd; }
 .brand-card .title { font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
 
+/* Tinting machines: a table on wide screens, a small card per row on phones */
+.machine-head { display: none; }
+.machine-row { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; border: 1px solid var(--line); border-radius: 10px; padding: .6rem 2rem .7rem .7rem; margin-top: .6rem; background: #fcfcfd; }
+.machine-row > div:first-child, .machine-row > div:nth-child(4) { grid-column: 1 / -1; }
+.machine-row .x { position: absolute; top: .35rem; right: .4rem; font-size: 1rem; color: var(--muted); }
+@media (min-width: 620px) {
+  .machine-head, .machine-row { grid-template-columns: 1.4fr .7fr .7fr 1.3fr 1.4rem; }
+  .machine-head { display: grid; gap: 0 10px; margin-top: .6rem; padding: 0 .1rem; font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
+  .machine-row { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: .35rem .1rem; margin-top: 0; align-items: start; }
+  .machine-row > div:first-child, .machine-row > div:nth-child(4) { grid-column: auto; }
+  .machine-row label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .machine-row .x { position: static; align-self: center; }
+}
+
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
   border: 1px solid var(--line); background: #fff; color: var(--text);

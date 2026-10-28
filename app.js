@@ -418,7 +418,7 @@ function blankVisit() {
     turnover_waterproofing: null, turnover_industrial: null, turnover_others: null, paint_volume: null,
     mix_retail: null, mix_contractor: null, mix_architect: null, mix_industrial: null,
     sec_contractors: null, sec_architects: null,
-    has_tinting: null, tinting_type: null, tinting_brands: [], tinting_brand_other: '',
+    has_tinting: null, tinting_machines: [],
     cd_dealer: null, cd_percent: null, credit_days: null, purchase_from: null, bank_name: '', payment_modes: [], payment_other: '',
     signboards: [],
     lat: null, lng: null, gps_accuracy: null,
@@ -451,7 +451,7 @@ async function viewForm(editId) {
   } else {
     const draft = await kv.get('draft');
     if (draft?.f?.user_id === user.id) {
-      f = draft.f;
+      f = { ...blankVisit(), ...draft.f }; // drafts from an older app version may lack newer fields
       photos = draft.photos || photos;
       gps.status = f.lat != null ? 'ok' : 'idle';
     } else {
@@ -558,6 +558,34 @@ function brandCard(b, i) {
   </div>`;
 }
 
+// Section 5: one row per paint company that supplied tinting machines to the shop.
+const blankMachine = () => ({ company: '', company_other: '', water: null, dual: null, brand: '', brand_other: '' });
+const isOtherBrand = (name) => name === 'Others' || name === 'Local brand';
+
+function machineRow(m, i) {
+  const p = `tinting_machines.${i}`;
+  const opt = (list, cur) => `<option value="">Select…</option>${list.map((n) => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('')}`;
+  const count = (k, label, ph) => `<div><label for="f_${p.replace(/\./g, '_')}_${k}">${label}</label>
+    <input type="number" step="1" min="0" inputmode="numeric" name="${p}.${k}" id="f_${p.replace(/\./g, '_')}_${k}" placeholder="e.g. ${ph}" value="${m[k] ?? ''}" autocomplete="off"></div>`;
+  return `<div class="machine-row">
+    <div><label>Paint company</label><select name="${p}.company" id="f_${p.replace(/\./g, '_')}_company" aria-label="Paint company">${opt(masters.brands.filter((b) => b.active).map((b) => b.name), m.company)}</select>
+      ${isOtherBrand(m.company) ? `<input name="${p}.company_other" placeholder="e.g. Kamdhenu Paints" value="${esc(m.company_other)}" autocomplete="off" style="margin-top:.35rem">` : ''}</div>
+    ${count('water', 'Water based', 1)}
+    ${count('dual', 'Dual mode', 1)}
+    <div><label>Tinting machine brand</label><select name="${p}.brand" aria-label="Tinting machine brand">${opt(masters.tintingBrands, m.brand)}</select>
+      ${m.brand === 'Others' ? `<input name="${p}.brand_other" placeholder="e.g. Inkmaker" value="${esc(m.brand_other)}" autocomplete="off" style="margin-top:.35rem">` : ''}</div>
+    <button type="button" class="link x" data-action="remove-machine" data-i="${i}" aria-label="Remove this machine row">✕</button>
+  </div>`;
+}
+
+function machinesText(list) {
+  return (list || []).map((m) => {
+    const counts = [m.water && `${m.water} water based`, m.dual && `${m.dual} dual mode`].filter(Boolean).join(', ');
+    const brand = m.brand === 'Others' ? m.brand_other || 'Other' : m.brand;
+    return `${isOtherBrand(m.company) && m.company_other ? m.company_other : m.company || '?'}${counts ? `: ${counts}` : ''}${brand ? ` (${brand})` : ''}`;
+  });
+}
+
 function renderForm() {
   const y = window.scrollY;
   const chosen = new Set(f.brands.map((b) => b.brand));
@@ -637,9 +665,10 @@ function renderForm() {
       <label>Has a tinting machine?</label>
       ${chips('has_tinting', [[1, 'Yes'], [0, 'No']])}
       ${f.has_tinting === 1 ? `
-        <label>Type</label>${chips('tinting_type', ['Water based', 'Dual mode', 'Both'])}
-        <label>Machine brand</label>${chips('tinting_brands', masters.tintingBrands, { multi: true })}
-        ${f.tinting_brands.includes('Others') ? field('tinting_brand_other', 'Other machine brand', { ph: 'e.g. Inkmaker' }) : ''}` : ''}
+        <div class="hint" style="margin-top:.6rem">One row for each paint company whose machines the shop has.</div>
+        <div class="machine-head"><span>Paint company</span><span>Water based</span><span>Dual mode</span><span>Tinting machine brand</span><span></span></div>
+        ${f.tinting_machines.map(machineRow).join('')}
+        <button type="button" class="btn small mt" data-action="add-machine">+ Add machine</button>` : ''}
     </div>
 
     <div class="card section"><h2><span class="num">6</span>Trade terms</h2>
@@ -726,7 +755,11 @@ app.addEventListener('change', (e) => {
     saveDraftSoon();
     return;
   }
-  if (el.tagName === 'SELECT') { setPath(f, el.name, el.value); saveDraftSoon(); }
+  if (el.tagName === 'SELECT') {
+    setPath(f, el.name, el.value);
+    if (/^tinting_machines\.\d+\.(company|brand)$/.test(el.name)) renderForm(); // shows/hides the "other" box
+    saveDraftSoon();
+  }
   if (el.name === 'mobile1' || el.name === 'mobile2') checkDuplicate();
 });
 
@@ -741,6 +774,7 @@ app.addEventListener('click', async (e) => {
       setPath(f, name, arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
     } else {
       setPath(f, name, getPath(f, name) === v ? null : v);
+      if (name === 'has_tinting' && f.has_tinting === 1 && !f.tinting_machines.length) f.tinting_machines.push(blankMachine());
       if (/^brands\.\d+\.dealer_type$/.test(name)) {
         const b = f.brands[+name.split('.')[1]];
         b.tier = ''; b._other = false;
@@ -763,6 +797,8 @@ app.addEventListener('click', async (e) => {
       renderForm(); saveDraftSoon(); break;
     }
     case 'remove-brand': f.brands.splice(+a.dataset.i, 1); renderForm(); saveDraftSoon(); break;
+    case 'add-machine': f.tinting_machines.push(blankMachine()); renderForm(); saveDraftSoon(); break;
+    case 'remove-machine': f.tinting_machines.splice(+a.dataset.i, 1); renderForm(); saveDraftSoon(); break;
     case 'cd':
       if (a.dataset.v === 'other') { f._cdOther = true; f.cd_percent = null; }
       else { f._cdOther = false; f.cd_percent = Number(a.dataset.v); }
@@ -864,6 +900,11 @@ function validate() {
   const mix = mixSum();
   if (mix != null && Math.abs(mix - 100) > 0.5) bad('mix_retail', `Customer-type shares should add up to 100% (now ${mix}%)`);
   for (const k of ['sec_contractors', 'sec_architects']) if (f[k] != null && (f[k] < 0 || !Number.isInteger(f[k]))) bad(k, 'Enter a whole number');
+  if (f.has_tinting === 1) f.tinting_machines.forEach((m, i) => {
+    const id = `tinting_machines_${i}`;
+    if (!m.company && (m.water != null || m.dual != null || m.brand)) bad(`${id}_company`, 'Select the paint company for each tinting machine row');
+    for (const k of ['water', 'dual']) if (m[k] != null && (m[k] < 0 || !Number.isInteger(m[k]))) bad(`${id}_${k}`, 'Number of machines must be a whole number');
+  });
   if (f.cd_dealer === 1 && f.cd_percent != null && (f.cd_percent <= 0 || f.cd_percent > 20)) bad('cd_percent', 'CD % looks wrong');
   return errs;
 }
@@ -938,7 +979,9 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
           ${kvRow('Paint volume', v.paint_volume != null ? `${Number(v.paint_volume).toLocaleString('en-IN')} litres / year` : '')}
           ${kvRow('Customer type', MIX_FIELDS.filter((k) => v[k] != null).map((k) => `${MIX_LABEL[k]} ${v[k]}%`).join(' · '))}
           ${kvRow('Secondary', [v.sec_contractors != null && `${v.sec_contractors} contractors / painters`, v.sec_architects != null && `${v.sec_architects} architects`].filter(Boolean).join(' · '))}
-          ${kvRow('Tinting machine', v.has_tinting === 1 ? `Yes — ${esc(v.tinting_type || '')} ${esc([...(v.tinting_brands || []).filter((x) => x !== 'Others'), v.tinting_brand_other].filter(Boolean).join(', '))}` : v.has_tinting === 0 ? 'No' : '')}
+          ${kvRow('Tinting machine', v.has_tinting === 0 ? 'No' : v.has_tinting !== 1 ? ''
+            : v.tinting_machines?.length ? machinesText(v.tinting_machines).map((t) => `<div>${esc(t)}</div>`).join('')
+            : `Yes — ${esc(v.tinting_type || '')} ${esc([...(v.tinting_brands || []).filter((x) => x !== 'Others'), v.tinting_brand_other].filter(Boolean).join(', '))}`)}
           ${kvRow('CD dealer', v.cd_dealer === 1 ? `Yes${v.cd_percent != null ? ` — ${v.cd_percent}%` : ''}` : v.cd_dealer === 0 ? 'No' : '')}
           ${kvRow('Credit days', v.credit_days != null ? `${v.credit_days} days` : '')}
           ${kvRow('Buys from', esc(v.purchase_from))}

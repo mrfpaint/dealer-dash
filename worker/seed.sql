@@ -4,7 +4,7 @@
 
 INSERT OR IGNORE INTO brands (name, sort) VALUES
   ('MRF Paints', 0), ('Asian Paints', 10), ('Berger Paints', 20), ('Nerolac', 30), ('Akzo Nobel (Dulux)', 40),
-  ('JSW Paints', 50), ('Opus', 60), ('Nippon Paint', 70), ('Sirca', 80), ('ICA', 90),
+  ('JSW Paints', 50), ('Opus', 60), ('Nippon Paint', 70), ('Indigo Paints', 75),('Sirca', 80), ('ICA', 90),
   ('Shalimar Paints', 100), ('Sheenlac', 110), ('Jotun', 120), ('Local brand', 130), ('Others', 140);
 
 -- Given by the sales head. "Super PC Dealer" was marked "needs verification" in the brief.

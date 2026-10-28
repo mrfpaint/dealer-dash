@@ -549,6 +549,30 @@ async function saveVisit(req, env, me) {
       tier: b.dealer_type === 'Regular' ? null : str(b.tier, 60),
     }));
 
+  // Section 5 table: one row per paint company that supplied machines.
+  const machines = (v.has_tinting && Array.isArray(v.tinting_machines) ? v.tinting_machines : [])
+    .filter((m) => m && brandNames.has(m.company))
+    .slice(0, 20)
+    .map((m) => ({
+      company: m.company,
+      company_other: m.company === 'Others' || m.company === 'Local brand' ? str(m.company_other, 60) : null,
+      water: count(m.water),
+      dual: count(m.dual),
+      brand: pick(m.brand, TINTING_BRANDS),
+      brand_other: m.brand === 'Others' ? str(m.brand_other, 60) : null,
+    }));
+  // The older summary columns are worked out from the rows so filters and old reports keep working.
+  const water = machines.some((m) => m.water > 0), dual = machines.some((m) => m.dual > 0);
+  const tinting = machines.length ? {
+    tinting_type: water && dual ? 'Both' : water ? 'Water based' : dual ? 'Dual mode' : null,
+    tinting_brands: JSON.stringify([...new Set(machines.map((m) => m.brand).filter(Boolean))]),
+    tinting_brand_other: machines.map((m) => m.brand_other).filter(Boolean).join(', ') || null,
+  } : {
+    tinting_type: v.has_tinting ? pick(v.tinting_type, ['Water based', 'Dual mode', 'Both']) : null,
+    tinting_brands: v.has_tinting ? strList(v.tinting_brands, TINTING_BRANDS) : '[]',
+    tinting_brand_other: v.has_tinting ? str(v.tinting_brand_other, 60) : null,
+  };
+
   const row = {
     id: v.id,
     user_id: me.id,
@@ -582,9 +606,8 @@ async function saveVisit(req, env, me) {
     sec_contractors: count(v.sec_contractors),
     sec_architects: count(v.sec_architects),
     has_tinting: bool(v.has_tinting),
-    tinting_type: v.has_tinting ? pick(v.tinting_type, ['Water based', 'Dual mode', 'Both']) : null,
-    tinting_brands: v.has_tinting ? strList(v.tinting_brands, TINTING_BRANDS) : '[]',
-    tinting_brand_other: v.has_tinting ? str(v.tinting_brand_other, 60) : null,
+    ...tinting,
+    tinting_machines: JSON.stringify(machines),
     cd_dealer: bool(v.cd_dealer),
     cd_percent: v.cd_dealer ? num(v.cd_percent) : null,
     credit_days: int(v.credit_days),
@@ -665,6 +688,7 @@ function parseVisit(v) {
     ...v,
     brands: JSON.parse(v.brands_json || '[]'),
     tinting_brands: JSON.parse(v.tinting_brands || '[]'),
+    tinting_machines: JSON.parse(v.tinting_machines || '[]'),
     payment_modes: JSON.parse(v.payment_modes || '[]'),
     signboards: JSON.parse(v.signboards || '[]'),
   };
@@ -737,7 +761,9 @@ const EXPORT_COLS = [
   ['Industrial / OEM %', 'mix_industrial'],
   ['Contractors / painters associated', 'sec_contractors'], ['Architects associated', 'sec_architects'],
   ['Tinting machine', (v) => yn(v.has_tinting)], ['Tinting type', 'tinting_type'],
-  ['Tinting brands', (v) => [...v.tinting_brands, v.tinting_brand_other].filter(Boolean).join(', ')],
+  ['Tinting brands', (v) => [...v.tinting_brands.filter((x) => x !== 'Others'), v.tinting_brand_other].filter(Boolean).join(', ')],
+  ['Tinting machines (company: water based / dual mode, machine brand)', (v) => v.tinting_machines.map((m) =>
+    `${m.company_other || m.company}: ${m.water ?? 0} water based / ${m.dual ?? 0} dual mode${m.brand ? ` (${m.brand === 'Others' ? m.brand_other || 'Other' : m.brand})` : ''}`).join('; ')],
   ['CD dealer', (v) => yn(v.cd_dealer)], ['CD %', 'cd_percent'], ['Credit days', 'credit_days'],
   ['Purchases from', 'purchase_from'], ['Bank name', 'bank_name'],
   ['Preferred payment method', (v) => [...v.payment_modes.filter((x) => x !== 'Others'), v.payment_other].filter(Boolean).join(', ')],
