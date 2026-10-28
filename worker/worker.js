@@ -520,6 +520,8 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 const int = (v) => { const n = num(v); return n === null ? null : Math.round(n); };
+const pct = (v) => { const n = num(v); return n === null ? null : Math.min(100, Math.max(0, n)); };
+const count = (v) => { const n = int(v); return n === null ? null : Math.max(0, n); };
 const bool = (v) => (v === true || v === 1 || v === '1' ? 1 : v === false || v === 0 || v === '0' ? 0 : null);
 const pick = (v, allowed) => (allowed.includes(v) ? v : null);
 const strList = (v, allowed) => JSON.stringify((Array.isArray(v) ? v : []).filter((x) => allowed.includes(x)));
@@ -564,11 +566,20 @@ async function saveVisit(req, env, me) {
     mobile2: phone(v.mobile2),
     landline: phone(v.landline),
     brands_json: JSON.stringify(brands),
-    turnover_total: num(v.turnover_total),
+    turnover_total: num(v.turnover_total), // ₹ lakhs per year
     turnover_wood: num(v.turnover_wood),
     turnover_metal: num(v.turnover_metal),
     turnover_wall: num(v.turnover_wall),
+    turnover_waterproofing: num(v.turnover_waterproofing),
+    turnover_industrial: num(v.turnover_industrial),
     turnover_others: num(v.turnover_others),
+    paint_volume: num(v.paint_volume),     // litres per year
+    mix_retail: pct(v.mix_retail),
+    mix_contractor: pct(v.mix_contractor),
+    mix_architect: pct(v.mix_architect),
+    mix_industrial: pct(v.mix_industrial),
+    sec_contractors: count(v.sec_contractors),
+    sec_architects: count(v.sec_architects),
     has_tinting: bool(v.has_tinting),
     tinting_type: v.has_tinting ? pick(v.tinting_type, ['Water based', 'Dual mode', 'Both']) : null,
     tinting_brands: v.has_tinting ? strList(v.tinting_brands, TINTING_BRANDS) : '[]',
@@ -714,8 +725,13 @@ const EXPORT_COLS = [
   ['Address', 'address'], ['Area', 'area'], ['Town', 'town'], ['District', 'district'], ['State', 'state'],
   ['Pincode', 'pincode'], ['Mobile 1', 'mobile1'], ['Mobile 2', 'mobile2'], ['Landline', 'landline'],
   ['Brands sold', (v) => v.brands.map(brandLabel).join('; ')],
-  ['Turnover total (Cr)', 'turnover_total'], ['Wood (Cr)', 'turnover_wood'], ['Metal (Cr)', 'turnover_metal'],
-  ['Wall (Cr)', 'turnover_wall'], ['Others (Cr)', 'turnover_others'],
+  ['Turnover total (Lakhs)', 'turnover_total'], ['Wood (Lakhs)', 'turnover_wood'], ['Metal (Lakhs)', 'turnover_metal'],
+  ['Wall (Lakhs)', 'turnover_wall'], ['Waterproofing (Lakhs)', 'turnover_waterproofing'],
+  ['Industrial (Lakhs)', 'turnover_industrial'], ['Others (Lakhs)', 'turnover_others'],
+  ['Paint volume (Litres/yr)', 'paint_volume'],
+  ['Retail sales %', 'mix_retail'], ['Contractor %', 'mix_contractor'], ['Architects / projects %', 'mix_architect'],
+  ['Industrial / OEM %', 'mix_industrial'],
+  ['Contractors / painters associated', 'sec_contractors'], ['Architects associated', 'sec_architects'],
   ['Tinting machine', (v) => yn(v.has_tinting)], ['Tinting type', 'tinting_type'],
   ['Tinting brands', (v) => [...v.tinting_brands, v.tinting_brand_other].filter(Boolean).join(', ')],
   ['CD dealer', (v) => yn(v.cd_dealer)], ['CD %', 'cd_percent'], ['Credit days', 'credit_days'],

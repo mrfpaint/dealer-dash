@@ -37,7 +37,11 @@ const app = $('#app');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
 const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
-const cr = (n) => (n === null || n === undefined || n === '' ? '' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`);
+// Turnover is recorded in ₹ lakhs per year.
+const lakh = (n) => (n === null || n === undefined || n === '' ? '' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} lakh`);
+const TURNOVER_PARTS = ['wood', 'metal', 'wall', 'waterproofing', 'industrial', 'others'];
+const MIX_FIELDS = ['mix_retail', 'mix_contractor', 'mix_architect', 'mix_industrial'];
+const MIX_LABEL = { mix_retail: 'Retail', mix_contractor: 'Contractor', mix_architect: 'Architects / projects', mix_industrial: 'Industrial / OEM' };
 const yn = (b) => (b === 1 ? 'Yes' : b === 0 ? 'No' : '—');
 const isManager = () => ['asm', 'rsm', 'sh', 'nh', 'nsh', 'admin'].includes(user?.role); // dashboard + shortlisting
 const isLead = () => ['sh', 'nh', 'nsh', 'admin'].includes(user?.role);                  // edit brand lists
@@ -405,7 +409,10 @@ function blankVisit() {
     shop_name: '', owner_name: '', mobile1: '', mobile2: '', landline: '', address: '',
     pincode: '', area: '', town: '', district: '', state: '',
     brands: [],
-    turnover_total: null, turnover_wood: null, turnover_metal: null, turnover_wall: null, turnover_others: null,
+    turnover_total: null, turnover_wood: null, turnover_metal: null, turnover_wall: null,
+    turnover_waterproofing: null, turnover_industrial: null, turnover_others: null, paint_volume: null,
+    mix_retail: null, mix_contractor: null, mix_architect: null, mix_industrial: null,
+    sec_contractors: null, sec_architects: null,
     has_tinting: null, tinting_type: null, tinting_brands: [], tinting_brand_other: '',
     cd_dealer: null, cd_percent: null, credit_days: null, purchase_from: null, payment_modes: [], payment_other: '',
     lat: null, lng: null, gps_accuracy: null,
@@ -514,6 +521,16 @@ function captureGps() {
 }
 function updateGps() { const el = $('#gps'); if (el) el.innerHTML = gpsHtml(); }
 
+function mixSum() {
+  const vals = MIX_FIELDS.map((k) => f[k]).filter((n) => n != null);
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) * 10) / 10 : null;
+}
+function mixTotalText() {
+  const t = mixSum();
+  if (t == null) return 'Shares should add up to 100%.';
+  return Math.abs(t - 100) <= 0.5 ? `Total: ${t}% ✓` : `<span style="color:var(--warn)">Total: ${t}% (should add up to 100%)</span>`;
+}
+
 function brandCard(b, i) {
   const bm = brandMaster(b.brand);
   const kind = b.dealer_type === 'Special' ? 'special' : b.dealer_type === 'Exclusive' ? 'exclusive' : null;
@@ -522,7 +539,7 @@ function brandCard(b, i) {
   const showOther = kind && (b._other || (b.tier && !known) || !opts.length);
   return `<div class="brand-card">
     <div class="title"><span>${esc(b.brand)}</span><button type="button" class="link" data-action="remove-brand" data-i="${i}">Remove</button></div>
-    ${b.brand === 'Others' || b.brand === 'Local brand' ? field(`brands.${i}.other_name`, 'Brand name', { ph: 'Which brand?' }) : ''}
+    ${b.brand === 'Others' || b.brand === 'Local brand' ? field(`brands.${i}.other_name`, 'Brand name', { ph: 'e.g. Kamdhenu Paints' }) : ''}
     <label>Dealer type</label>
     ${chips(`brands.${i}.dealer_type`, DEALER_TYPES.map((t) => [t, t === 'Special' ? 'Special dealer' : t === 'Exclusive' ? 'Exclusive outlet' : 'Regular dealer']))}
     ${kind && opts.length ? `<label>${kind === 'special' ? 'Classification' : 'Outlet type'}</label>
@@ -531,14 +548,14 @@ function brandCard(b, i) {
         ${opts.map((o) => `<option ${o.name === b.tier ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
         <option value="__other" ${showOther ? 'selected' : ''}>Other (type it)</option>
       </select>` : ''}
-    ${showOther ? field(`brands.${i}.tier`, kind === 'special' ? (opts.length ? 'Other classification' : 'Classification (if any)') : (opts.length ? 'Other outlet type' : 'Outlet type (if known)'), { ph: 'As told by the dealer' }) : ''}
+    ${showOther ? field(`brands.${i}.tier`, kind === 'special' ? (opts.length ? 'Other classification' : 'Classification (if any)') : (opts.length ? 'Other outlet type' : 'Outlet type (if known)'), { ph: 'e.g. Platinum Dealer' }) : ''}
   </div>`;
 }
 
 function renderForm() {
   const y = window.scrollY;
   const chosen = new Set(f.brands.map((b) => b.brand));
-  const turnoverStep = { type: 'number', step: 'any', inputmode: 'decimal', ph: '0' };
+  const num = (ph, o = {}) => ({ type: 'number', step: 'any', inputmode: 'decimal', ph: `e.g. ${ph}`, ...o });
   app.innerHTML = `
   <form class="narrow" id="visitForm" novalidate>
     <h1>${f._editing ? 'Edit visit' : 'New dealer visit'}</h1>
@@ -555,19 +572,19 @@ function renderForm() {
       ${field('shop_name', 'Shop name', { req: 1, ph: 'e.g. Buhari Paints Ltd' })}
       ${field('owner_name', 'Name of the dealer', { ph: 'e.g. Joshy Francis' })}
       <div class="row">
-        ${field('mobile1', 'Mobile 1', { req: 1, type: 'tel', inputmode: 'tel', max: 14, ph: '10 digits' })}
-        ${field('mobile2', 'Mobile 2', { type: 'tel', inputmode: 'tel', max: 14 })}
+        ${field('mobile1', 'Mobile 1', { req: 1, type: 'tel', inputmode: 'tel', max: 14, ph: 'e.g. 9876543210' })}
+        ${field('mobile2', 'Mobile 2', { type: 'tel', inputmode: 'tel', max: 14, ph: 'e.g. 9447012345' })}
       </div>
       <div id="dup"></div>
-      ${field('landline', 'Landline', { type: 'tel', inputmode: 'tel', max: 15, ph: 'with STD code' })}
-      ${field('address', 'Address', { ta: 1, ph: 'Door no., street, landmark' })}
+      ${field('landline', 'Landline', { type: 'tel', inputmode: 'tel', max: 15, ph: 'e.g. 0484 2345678' })}
+      ${field('address', 'Address', { ta: 1, ph: 'e.g. 12/345, MG Road, near Town Hall' })}
       <div class="row">
-        ${field('pincode', 'Pincode', { inputmode: 'numeric', max: 6, ph: '6 digits', hint: `<span id="pinHint">${pinInfo?.pin === f.pincode ? esc(pinInfo.hint) : ''}</span>` })}
-        ${field('area', 'Area / locality', { list: 'areaList' })}
+        ${field('pincode', 'Pincode', { inputmode: 'numeric', max: 6, ph: 'e.g. 682020', hint: `<span id="pinHint">${pinInfo?.pin === f.pincode ? esc(pinInfo.hint) : ''}</span>` })}
+        ${field('area', 'Area / locality', { list: 'areaList', ph: 'e.g. Kadavanthra' })}
       </div>
       <div class="row">
-        ${field('town', 'Town', { list: 'townList' })}
-        ${field('district', 'District')}
+        ${field('town', 'Town', { list: 'townList', ph: 'e.g. Kochi' })}
+        ${field('district', 'District', { ph: 'e.g. Ernakulam' })}
       </div>
       <label for="f_state">State</label>
       <select name="state" id="f_state"><option value="">Select…</option>${STATES.map((s) => `<option ${s === f.state ? 'selected' : ''}>${s}</option>`).join('')}</select>
@@ -582,14 +599,32 @@ function renderForm() {
       ${f.brands.map(brandCard).join('')}
     </div>
 
-    <div class="card section"><h2><span class="num">4</span>Turnover (₹ crore per year)</h2>
+    <div class="card section" id="sec_turnover"><h2><span class="num">4</span>Turnover (₹ lakhs per year)</h2>
       <div class="row">
-        ${field('turnover_wood', 'Wood', turnoverStep)}
-        ${field('turnover_metal', 'Metal', turnoverStep)}
-        ${field('turnover_wall', 'Wall', turnoverStep)}
-        ${field('turnover_others', 'Others', turnoverStep)}
+        ${field('turnover_wood', 'Wood', num(20))}
+        ${field('turnover_metal', 'Metal', num(30))}
+        ${field('turnover_wall', 'Wall', num(40))}
+        ${field('turnover_waterproofing', 'Waterproofing', num(10))}
+        ${field('turnover_industrial', 'Industrial', num(15))}
+        ${field('turnover_others', 'Others', num(5))}
       </div>
-      ${field('turnover_total', 'Total turnover', { ...turnoverStep, hint: 'Adds up the four above automatically, or type the total if that is all the dealer tells you. 50 lakh = 0.5' })}
+      <div class="row">
+        ${field('turnover_total', 'Total turnover', num(120, { hint: 'Adds up the six above, or type the total if that is all the dealer tells you. 1 crore = 100 lakhs.' }))}
+        ${field('paint_volume', 'Paint volume (litres/yr)', num('25000', { step: '1', inputmode: 'numeric' }))}
+      </div>
+      <h3>Customer type (% of sales)</h3>
+      <div class="row">
+        ${field('mix_retail', 'Retail sales', num(50))}
+        ${field('mix_contractor', 'Contractor', num(30))}
+        ${field('mix_architect', 'Architects / projects', num(15))}
+        ${field('mix_industrial', 'Industrial / OEM supply', num(5))}
+      </div>
+      <div class="hint" id="mixTotal">${mixTotalText()}</div>
+      <h3>Secondary (number associated)</h3>
+      <div class="row">
+        ${field('sec_contractors', 'Contractors / painters', num(25, { step: '1', inputmode: 'numeric' }))}
+        ${field('sec_architects', 'Architects', num(4, { step: '1', inputmode: 'numeric' }))}
+      </div>
     </div>
 
     <div class="card section"><h2><span class="num">5</span>Tinting machine</h2>
@@ -598,7 +633,7 @@ function renderForm() {
       ${f.has_tinting === 1 ? `
         <label>Type</label>${chips('tinting_type', ['Water based', 'Dual mode', 'Both'])}
         <label>Machine brand</label>${chips('tinting_brands', masters.tintingBrands, { multi: true })}
-        ${f.tinting_brands.includes('Others') ? field('tinting_brand_other', 'Other machine brand') : ''}` : ''}
+        ${f.tinting_brands.includes('Others') ? field('tinting_brand_other', 'Other machine brand', { ph: 'e.g. Inkmaker' }) : ''}` : ''}
     </div>
 
     <div class="card section"><h2><span class="num">6</span>Trade terms</h2>
@@ -608,16 +643,16 @@ function renderForm() {
         <label>CD %</label>
         <div class="chips">${CD_PERCENTS.map((p) => `<button type="button" class="chip ${f.cd_percent === p && !f._cdOther ? 'on' : ''}" data-action="cd" data-v="${p}">${p}%</button>`).join('')}
           <button type="button" class="chip ${f._cdOther || (f.cd_percent != null && !CD_PERCENTS.includes(f.cd_percent)) ? 'on' : ''}" data-action="cd" data-v="other">Other</button></div>
-        ${f._cdOther || (f.cd_percent != null && !CD_PERCENTS.includes(f.cd_percent)) ? field('cd_percent', 'CD %', { type: 'number', step: 'any', inputmode: 'decimal' }) : ''}` : ''}
+        ${f._cdOther || (f.cd_percent != null && !CD_PERCENTS.includes(f.cd_percent)) ? field('cd_percent', 'CD %', { type: 'number', step: 'any', inputmode: 'decimal', ph: 'e.g. 4' }) : ''}` : ''}
       <label>Credit days</label>
       <div class="chips">${CREDIT_DAYS.map((d) => `<button type="button" class="chip ${f.credit_days === d && !f._creditOther ? 'on' : ''}" data-action="credit" data-v="${d}">${d} days</button>`).join('')}
         <button type="button" class="chip ${f._creditOther || (f.credit_days != null && !CREDIT_DAYS.includes(f.credit_days)) ? 'on' : ''}" data-action="credit" data-v="other">Other</button></div>
-      ${f._creditOther || (f.credit_days != null && !CREDIT_DAYS.includes(f.credit_days)) ? field('credit_days', 'Credit days', { type: 'number', step: '1', inputmode: 'numeric' }) : ''}
+      ${f._creditOther || (f.credit_days != null && !CREDIT_DAYS.includes(f.credit_days)) ? field('credit_days', 'Credit days', { type: 'number', step: '1', inputmode: 'numeric', ph: 'e.g. 45' }) : ''}
       <label>Buys from</label>
       ${chips('purchase_from', ['Direct company', 'Wholesaler', 'Both'])}
       <label>Payment method</label>
       ${chips('payment_modes', masters.paymentModes, { multi: true })}
-      ${f.payment_modes.includes('Others') ? field('payment_other', 'Other payment method') : ''}
+      ${f.payment_modes.includes('Others') ? field('payment_other', 'Other payment method', { ph: 'e.g. Demand draft' }) : ''}
     </div>
 
     <div class="card section"><h2><span class="num">7</span>Photos</h2>
@@ -634,7 +669,7 @@ function renderForm() {
       <label>Interest in becoming an MRF dealer</label>
       ${chips('interest', ['Hot', 'Warm', 'Cold'], { cls: (v) => v.toLowerCase() })}
       ${field('followup_date', 'Follow-up date', { type: 'date' })}
-      ${field('remarks', 'Remarks', { ta: 1, ph: 'Anything management should know' })}
+      ${field('remarks', 'Remarks', { ta: 1, ph: 'e.g. Unhappy with current supplier credit terms; open to meeting our ASM next week' })}
     </div>
   </form>
   <div class="savebar"><div class="inner">
@@ -657,11 +692,12 @@ app.addEventListener('input', (e) => {
   el.classList.remove('invalid');
 
   if (el.name.startsWith('turnover_') && el.name !== 'turnover_total' && !f._totalManual) {
-    const parts = ['wood', 'metal', 'wall', 'others'].map((k) => f[`turnover_${k}`]).filter((n) => n != null);
+    const parts = TURNOVER_PARTS.map((k) => f[`turnover_${k}`]).filter((n) => n != null);
     f.turnover_total = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100 : null;
     $('#f_turnover_total').value = f.turnover_total ?? '';
   }
   if (el.name === 'turnover_total') f._totalManual = v != null;
+  if (el.name.startsWith('mix_')) $('#mixTotal').innerHTML = mixTotalText();
   if (el.name === 'pincode' && v.length === 6) lookupPincode(v);
   saveDraftSoon();
 });
@@ -810,7 +846,12 @@ function validate() {
   if (f.mobile2 && !/^[6-9]\d{9}$/.test(cleanMobile(f.mobile2))) bad('mobile2', 'Mobile 2 is not a valid 10-digit number');
   if (f.pincode && !/^\d{6}$/.test(f.pincode)) bad('pincode', 'Pincode must be 6 digits');
   if (!f.brands.length) errs.push(['brands', 'Select at least one brand the shop sells']);
-  for (const k of ['wood', 'metal', 'wall', 'others', 'total']) if (f[`turnover_${k}`] < 0) bad(`turnover_${k}`, 'Turnover cannot be negative');
+  for (const k of [...TURNOVER_PARTS, 'total']) if (f[`turnover_${k}`] < 0) bad(`turnover_${k}`, 'Turnover cannot be negative');
+  if (f.paint_volume < 0) bad('paint_volume', 'Paint volume cannot be negative');
+  for (const k of MIX_FIELDS) if (f[k] != null && (f[k] < 0 || f[k] > 100)) bad(k, 'Each customer-type share must be between 0 and 100%');
+  const mix = mixSum();
+  if (mix != null && Math.abs(mix - 100) > 0.5) bad('mix_retail', `Customer-type shares should add up to 100% (now ${mix}%)`);
+  for (const k of ['sec_contractors', 'sec_architects']) if (f[k] != null && (f[k] < 0 || !Number.isInteger(f[k]))) bad(k, 'Enter a whole number');
   if (f.cd_dealer === 1 && f.cd_percent != null && (f.cd_percent <= 0 || f.cd_percent > 20)) bad('cd_percent', 'CD % looks wrong');
   return errs;
 }
@@ -880,8 +921,11 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
           ${kvRow('Address', esc([v.address, v.area, v.town, v.district, v.state, v.pincode].filter(Boolean).join(', ')))}
           ${kvRow('Location', v.lat != null ? `<a href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open in Google Maps</a> (±${Math.round(v.gps_accuracy || 0)} m)` : '')}
           ${kvRow('Brands sold', brandsHtml(v.brands))}
-          ${kvRow('Turnover', [cr(v.turnover_total) && `<b>${cr(v.turnover_total)}</b>`,
-            ...['wood', 'metal', 'wall', 'others'].filter((k) => v[`turnover_${k}`] != null).map((k) => `${k[0].toUpperCase() + k.slice(1)} ${cr(v[`turnover_${k}`])}`)].filter(Boolean).join(' · '))}
+          ${kvRow('Turnover', [lakh(v.turnover_total) && `<b>${lakh(v.turnover_total)}</b>`,
+            ...TURNOVER_PARTS.filter((k) => v[`turnover_${k}`] != null).map((k) => `${k[0].toUpperCase() + k.slice(1)} ${lakh(v[`turnover_${k}`])}`)].filter(Boolean).join(' · '))}
+          ${kvRow('Paint volume', v.paint_volume != null ? `${Number(v.paint_volume).toLocaleString('en-IN')} litres / year` : '')}
+          ${kvRow('Customer type', MIX_FIELDS.filter((k) => v[k] != null).map((k) => `${MIX_LABEL[k]} ${v[k]}%`).join(' · '))}
+          ${kvRow('Secondary', [v.sec_contractors != null && `${v.sec_contractors} contractors / painters`, v.sec_architects != null && `${v.sec_architects} architects`].filter(Boolean).join(' · '))}
           ${kvRow('Tinting machine', v.has_tinting === 1 ? `Yes — ${esc(v.tinting_type || '')} ${esc([...(v.tinting_brands || []).filter((x) => x !== 'Others'), v.tinting_brand_other].filter(Boolean).join(', '))}` : v.has_tinting === 0 ? 'No' : '')}
           ${kvRow('CD dealer', v.cd_dealer === 1 ? `Yes${v.cd_percent != null ? ` — ${v.cd_percent}%` : ''}` : v.cd_dealer === 0 ? 'No' : '')}
           ${kvRow('Credit days', v.credit_days != null ? `${v.credit_days} days` : '')}
@@ -952,7 +996,7 @@ async function viewDashboard() {
         ${inp('district', 'District')}${inp('town', 'Town / area')}
         ${sel('brand', masters.brands.map((b) => b.name), 'Sells brand')}
         ${sel('dealer_type', [['Regular', 'Regular dealer'], ['Special', 'Special dealer'], ['Exclusive', 'Exclusive outlet']], 'Dealer type')}
-        ${inp('min_turnover', 'Min turnover (₹ Cr)', 'number')}
+        ${inp('min_turnover', 'Min turnover (₹ lakhs)', 'number')}
         ${sel('tinting', [['1', 'Has tinting'], ['0', 'No tinting']], 'Tinting machine')}
         ${sel('cd', [['1', 'CD dealer'], ['0', 'Non-CD']], 'Cash discount')}
         ${sel('interest', ['Hot', 'Warm', 'Cold'], 'Interest')}
@@ -976,7 +1020,7 @@ async function viewDashboard() {
     const t = s.totals;
     $('#stats').innerHTML = [
       [t.n, 'Dealers visited'], [t.hot || 0, 'Hot'], [t.warm || 0, 'Warm'], [t.tinting || 0, 'With tinting'],
-      [t.shortlisted || 0, 'Shortlisted'], [t.converted || 0, 'Converted'], [t.turnover ? `₹${t.turnover} Cr` : '—', 'Total turnover'],
+      [t.shortlisted || 0, 'Shortlisted'], [t.converted || 0, 'Converted'], [t.turnover ? lakh(t.turnover) : '—', 'Total turnover'],
     ].map(([v, l]) => `<div class="stat"><div class="v">${esc(v)}</div><div class="l">${l}</div></div>`).join('');
     const bars = (title, rows) => {
       const max = Math.max(1, ...rows.map((r) => r.n));
@@ -999,7 +1043,7 @@ async function viewDashboard() {
         <td><b>${esc(v.shop_name)}</b><div class="muted">${esc(v.owner_name || '')}</div></td>
         <td>${esc([v.town || v.area, v.district].filter(Boolean).join(', '))}<div class="muted">${esc(v.state || '')}</div></td>
         <td>${v.brands.map((b) => esc(b.brand) + (b.dealer_type !== 'Regular' ? ` <span class="pill">${esc(b.tier || b.dealer_type)}</span>` : '')).join(', ')}</td>
-        <td class="right">${cr(v.turnover_total)}</td>
+        <td class="right">${lakh(v.turnover_total)}</td>
         <td>${yn(v.has_tinting)}</td>
         <td>${v.interest ? `<span class="pill ${esc(v.interest)}">${esc(v.interest)}</span>` : ''}</td>
         <td><span class="pill ${esc(v.status)}">${esc(v.status)}</span></td>

@@ -68,11 +68,22 @@ CREATE TABLE IF NOT EXISTS visits (
   -- [{brand, dealer_type: Regular|Special|Exclusive, tier}]
   brands_json     TEXT NOT NULL DEFAULT '[]',
 
-  turnover_total  REAL,                       -- ₹ crore per year
+  turnover_total  REAL,                       -- ₹ lakhs per year
   turnover_wood   REAL,
   turnover_metal  REAL,
   turnover_wall   REAL,
+  turnover_waterproofing REAL,
+  turnover_industrial REAL,
   turnover_others REAL,
+  paint_volume    REAL,                       -- litres per year
+
+  mix_retail      REAL,                       -- customer type, % of sales
+  mix_contractor  REAL,
+  mix_architect   REAL,                       -- architects / projects
+  mix_industrial  REAL,                       -- industrial / OEM supply
+
+  sec_contractors INTEGER,                    -- contractors / painters associated
+  sec_architects  INTEGER,                    -- architects associated
 
   has_tinting     INTEGER,                    -- 1 yes / 0 no / NULL not asked
   tinting_type    TEXT,                       -- Water based | Dual mode | Both
