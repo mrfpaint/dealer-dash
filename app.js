@@ -26,7 +26,8 @@ const LOGIN_SCREENS = [
     title: 'Administrator Login', desc: 'This area is restricted to system administrators only.', userPh: 'Admin username', passPh: 'Admin password' },
 ];
 const DEALER_TYPES = ['Regular', 'Special', 'Exclusive'];
-const CREDIT_DAYS = [7, 15, 30, 60];
+const CREDIT_DAYS = [7, 15, 30, 45, 60];
+const SIGNBOARDS = [['GLB', 'GLB (Glow Lit Board)'], ['NLB', 'NLB (Non Lit Board)'], ['ACP', 'ACP (Aluminium Composite Panel)']];
 const CD_PERCENTS = [3.5, 5];
 
 // ---------------------------------------------------------------------------
@@ -41,8 +42,11 @@ const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN'
 const lakh = (n) => (n === null || n === undefined || n === '' ? '' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })} lakh`);
 const TURNOVER_PARTS = ['wood', 'metal', 'wall', 'waterproofing', 'industrial', 'others'];
 const MIX_FIELDS = ['mix_retail', 'mix_contractor', 'mix_architect', 'mix_industrial'];
-const MIX_LABEL = { mix_retail: 'Retail', mix_contractor: 'Contractor', mix_architect: 'Architects / projects', mix_industrial: 'Industrial / OEM' };
+const MIX_LABEL = { mix_retail: 'Direct consumer',mix_contractor: 'Contractor', mix_architect: 'Architects / projects', mix_industrial: 'Industrial / OEM' };
 const yn = (b) => (b === 1 ? 'Yes' : b === 0 ? 'No' : '—');
+// MRF Paints always comes first wherever brands are listed.
+const isMrf = (name) => /^MRF\b/i.test(name || '');
+const mrfFirst = (list, name = (x) => x) => [...list].sort((a, b) => isMrf(name(b)) - isMrf(name(a)));
 const isManager = () => ['asm', 'rsm', 'sh', 'nh', 'nsh', 'admin'].includes(user?.role); // dashboard + shortlisting
 const isLead = () => ['sh', 'nh', 'nsh', 'admin'].includes(user?.role);                  // edit brand lists
 const homeFor = (u) => (['rsm', 'sh', 'nh', 'nsh', 'admin'].includes(u.role) ? '#/dashboard' : '#/');
@@ -141,6 +145,7 @@ async function api(path, { method = 'GET', body, raw, headers = {} } = {}) {
 async function loadMasters() {
   try {
     masters = await api('/api/masters');
+    masters.brands = mrfFirst(masters.brands, (b) => b.name);
     ls.set('masters', masters);
   } catch (e) {
     if (!masters) throw e;
@@ -414,7 +419,8 @@ function blankVisit() {
     mix_retail: null, mix_contractor: null, mix_architect: null, mix_industrial: null,
     sec_contractors: null, sec_architects: null,
     has_tinting: null, tinting_type: null, tinting_brands: [], tinting_brand_other: '',
-    cd_dealer: null, cd_percent: null, credit_days: null, purchase_from: null, payment_modes: [], payment_other: '',
+    cd_dealer: null, cd_percent: null, credit_days: null, purchase_from: null, bank_name: '', payment_modes: [], payment_other: '',
+    signboards: [],
     lat: null, lng: null, gps_accuracy: null,
     interest: null, remarks: '', followup_date: '',
   };
@@ -614,7 +620,7 @@ function renderForm() {
       </div>
       <h3>Customer type (% of sales)</h3>
       <div class="row">
-        ${field('mix_retail', 'Retail sales', num(50))}
+        ${field('mix_retail', 'Direct consumer', num(50))}
         ${field('mix_contractor', 'Contractor', num(30))}
         ${field('mix_architect', 'Architects / projects', num(15))}
         ${field('mix_industrial', 'Industrial / OEM supply', num(5))}
@@ -650,12 +656,18 @@ function renderForm() {
       ${f._creditOther || (f.credit_days != null && !CREDIT_DAYS.includes(f.credit_days)) ? field('credit_days', 'Credit days', { type: 'number', step: '1', inputmode: 'numeric', ph: 'e.g. 45' }) : ''}
       <label>Buys from</label>
       ${chips('purchase_from', ['Direct company', 'Wholesaler', 'Both'])}
-      <label>Payment method</label>
+      ${field('bank_name', 'Bank name', { ph: 'e.g. Federal Bank' })}
+      <label>Preferred payment method</label>
       ${chips('payment_modes', masters.paymentModes, { multi: true })}
       ${f.payment_modes.includes('Others') ? field('payment_other', 'Other payment method', { ph: 'e.g. Demand draft' }) : ''}
     </div>
 
-    <div class="card section"><h2><span class="num">7</span>Photos</h2>
+    <div class="card section"><h2><span class="num">7</span>Sign board</h2>
+      <label>Sign board type (tap all that apply)</label>
+      ${chips('signboards', SIGNBOARDS, { multi: true })}
+    </div>
+
+    <div class="card section"><h2><span class="num">8</span>Photos</h2>
       <div class="photos">${['shop', 'card'].map((k) => `
         <label class="photo-slot" style="margin:0">
           ${photoUrls[k] ? `<img src="${photoUrls[k]}" alt=""><button type="button" class="x" data-action="photo-del" data-k="${k}">✕</button>`
@@ -665,7 +677,7 @@ function renderForm() {
         </label>`).join('')}</div>
     </div>
 
-    <div class="card section"><h2><span class="num">8</span>Outcome</h2>
+    <div class="card section"><h2><span class="num">9</span>Outcome</h2>
       <label>Interest in becoming an MRF dealer</label>
       ${chips('interest', ['Hot', 'Warm', 'Cold'], { cls: (v) => v.toLowerCase() })}
       ${field('followup_date', 'Follow-up date', { type: 'date' })}
@@ -890,7 +902,7 @@ function closeModal() { $('.modal-bg')?.remove(); }
 
 function brandsHtml(brands) {
   if (!brands?.length) return '—';
-  return brands.map((b) => `<div><b>${esc(b.brand)}${b.other_name ? `: ${esc(b.other_name)}` : ''}</b> — ${esc(b.dealer_type === 'Regular' ? 'Regular dealer' : b.dealer_type === 'Special' ? 'Special dealer' : 'Exclusive outlet')}${b.tier ? ` (${esc(b.tier)})` : ''}</div>`).join('');
+  return mrfFirst(brands, (b) => b.brand).map((b) => `<div><b>${esc(b.brand)}${b.other_name ? `: ${esc(b.other_name)}` : ''}</b> — ${esc(b.dealer_type === 'Regular' ? 'Regular dealer' : b.dealer_type === 'Special' ? 'Special dealer' : 'Exclusive outlet')}${b.tier ? ` (${esc(b.tier)})` : ''}</div>`).join('');
 }
 
 async function showVisit(v, { pending = null, onChange = null } = {}) {
@@ -930,7 +942,9 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
           ${kvRow('CD dealer', v.cd_dealer === 1 ? `Yes${v.cd_percent != null ? ` — ${v.cd_percent}%` : ''}` : v.cd_dealer === 0 ? 'No' : '')}
           ${kvRow('Credit days', v.credit_days != null ? `${v.credit_days} days` : '')}
           ${kvRow('Buys from', esc(v.purchase_from))}
-          ${kvRow('Payment', esc([...(v.payment_modes || []).filter((x) => x !== 'Others'), v.payment_other].filter(Boolean).join(', ')))}
+          ${kvRow('Bank', esc(v.bank_name))}
+          ${kvRow('Preferred payment', esc([...(v.payment_modes || []).filter((x) => x !== 'Others'), v.payment_other].filter(Boolean).join(', ')))}
+          ${kvRow('Sign board', esc((v.signboards || []).join(', ')))}
           ${kvRow('Follow-up', fmtDate(v.followup_date))}
           ${kvRow('Remarks', esc(v.remarks).replace(/\n/g, '<br>'))}
           ${kvRow('Status note', v.status_note ? `${esc(v.status_note)} <span class="muted">— ${esc(v.status_by)}</span>` : '')}
@@ -1027,7 +1041,7 @@ async function viewDashboard() {
       return `<div class="card bars"><h3 style="margin-top:0">${title}</h3>${rows.length ? rows.map((r) =>
         `<div class="bar"><span title="${esc(r.k)}">${esc(r.k)}</span><div class="track"><div class="fill" style="width:${(r.n / max) * 100}%"></div></div><span class="right">${r.n}</span></div>`).join('') : '<div class="muted">No data</div>'}</div>`;
     };
-    $('#charts').innerHTML = bars('Competitor brands at visited shops', s.byBrand) + bars('By state', s.byState) + bars('By person', s.byRep) + bars('By status', s.byStatus);
+    $('#charts').innerHTML = bars('Brands at visited shops', mrfFirst(s.byBrand, (b) => b.k)) + bars('By state', s.byState) + bars('By person', s.byRep) + bars('By status', s.byStatus);
   }
 
   async function loadRows(reset) {
@@ -1042,7 +1056,7 @@ async function viewDashboard() {
         <td>${fmtDate(v.visit_date)}</td>
         <td><b>${esc(v.shop_name)}</b><div class="muted">${esc(v.owner_name || '')}</div></td>
         <td>${esc([v.town || v.area, v.district].filter(Boolean).join(', '))}<div class="muted">${esc(v.state || '')}</div></td>
-        <td>${v.brands.map((b) => esc(b.brand) + (b.dealer_type !== 'Regular' ? ` <span class="pill">${esc(b.tier || b.dealer_type)}</span>` : '')).join(', ')}</td>
+        <td>${mrfFirst(v.brands, (b) => b.brand).map((b) => esc(b.brand) + (b.dealer_type !== 'Regular' ? ` <span class="pill">${esc(b.tier || b.dealer_type)}</span>` : '')).join(', ')}</td>
         <td class="right">${lakh(v.turnover_total)}</td>
         <td>${yn(v.has_tinting)}</td>
         <td>${v.interest ? `<span class="pill ${esc(v.interest)}">${esc(v.interest)}</span>` : ''}</td>

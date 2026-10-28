@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS visits (
   turnover_others REAL,
   paint_volume    REAL,                       -- litres per year
 
-  mix_retail      REAL,                       -- customer type, % of sales
+  mix_retail      REAL,                       -- customer type, % of sales ("Direct consumer")
   mix_contractor  REAL,
   mix_architect   REAL,                       -- architects / projects
   mix_industrial  REAL,                       -- industrial / OEM supply
@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS visits (
   purchase_from   TEXT,                       -- Direct company | Wholesaler | Both
   payment_modes   TEXT NOT NULL DEFAULT '[]', -- JSON array
   payment_other   TEXT,
+  bank_name       TEXT,
+  signboards      TEXT NOT NULL DEFAULT '[]', -- JSON array: GLB | NLB | ACP
 
   lat             REAL,
   lng             REAL,

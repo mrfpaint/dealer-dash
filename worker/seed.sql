@@ -3,7 +3,7 @@
 -- After the first load, the sales head edits these from the app (Brands page).
 
 INSERT OR IGNORE INTO brands (name, sort) VALUES
-  ('Asian Paints', 10), ('Berger Paints', 20), ('Nerolac', 30), ('Akzo Nobel (Dulux)', 40),
+  ('MRF Paints', 0), ('Asian Paints', 10), ('Berger Paints', 20), ('Nerolac', 30), ('Akzo Nobel (Dulux)', 40),
   ('JSW Paints', 50), ('Opus', 60), ('Nippon Paint', 70), ('Sirca', 80), ('ICA', 90),
   ('Shalimar Paints', 100), ('Sheenlac', 110), ('Jotun', 120), ('Local brand', 130), ('Others', 140);
 

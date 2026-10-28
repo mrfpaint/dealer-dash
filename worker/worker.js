@@ -26,6 +26,7 @@ const LOGIN_SCREENS = {
 const STATUSES = ['New', 'Shortlisted', 'In talks', 'Converted', 'Not suitable'];
 const TINTING_BRANDS = ['COROB', 'AGS', 'Idex', 'Santint', 'Fast & Fluid', 'Others'];
 const PAYMENT_MODES = ['Cheque', 'RTGS / NEFT', 'UPI', 'Cash', 'Others'];
+const SIGNBOARDS = ['GLB', 'NLB', 'ACP']; // Glow Lit Board, Non Lit Board, Aluminium Composite Panel
 
 export default {
   async fetch(request, env) {
@@ -452,7 +453,7 @@ async function syncFieldOne(env) {
 
 async function masters(env) {
   const [brands, options] = await env.DB.batch([
-    env.DB.prepare('SELECT id, name, sort, active FROM brands ORDER BY sort, name'),
+    env.DB.prepare("SELECT id, name, sort, active FROM brands ORDER BY name LIKE 'MRF%' DESC, sort, name"),
     env.DB.prepare('SELECT id, brand_id, kind, name, sort, verified, active FROM brand_options ORDER BY sort, name'),
   ]);
   const list = brands.results.map((b) => ({ ...b, options: options.results.filter((o) => o.brand_id === b.id) }));
@@ -590,6 +591,8 @@ async function saveVisit(req, env, me) {
     purchase_from: pick(v.purchase_from, ['Direct company', 'Wholesaler', 'Both']),
     payment_modes: strList(v.payment_modes, PAYMENT_MODES),
     payment_other: str(v.payment_other, 60),
+    bank_name: str(v.bank_name, 80),
+    signboards: strList(v.signboards, SIGNBOARDS),
     lat: num(v.lat),
     lng: num(v.lng),
     gps_accuracy: num(v.gps_accuracy),
@@ -663,6 +666,7 @@ function parseVisit(v) {
     brands: JSON.parse(v.brands_json || '[]'),
     tinting_brands: JSON.parse(v.tinting_brands || '[]'),
     payment_modes: JSON.parse(v.payment_modes || '[]'),
+    signboards: JSON.parse(v.signboards || '[]'),
   };
 }
 
@@ -724,19 +728,20 @@ const EXPORT_COLS = [
   ['Visit date', 'visit_date'], ['Visited by', 'rep_name'], ['Shop name', 'shop_name'], ['Dealer name', 'owner_name'],
   ['Address', 'address'], ['Area', 'area'], ['Town', 'town'], ['District', 'district'], ['State', 'state'],
   ['Pincode', 'pincode'], ['Mobile 1', 'mobile1'], ['Mobile 2', 'mobile2'], ['Landline', 'landline'],
-  ['Brands sold', (v) => v.brands.map(brandLabel).join('; ')],
+  ['Brands sold', (v) => [...v.brands].sort((a, b) => /^MRF/.test(b.brand) - /^MRF/.test(a.brand)).map(brandLabel).join('; ')],
   ['Turnover total (Lakhs)', 'turnover_total'], ['Wood (Lakhs)', 'turnover_wood'], ['Metal (Lakhs)', 'turnover_metal'],
   ['Wall (Lakhs)', 'turnover_wall'], ['Waterproofing (Lakhs)', 'turnover_waterproofing'],
   ['Industrial (Lakhs)', 'turnover_industrial'], ['Others (Lakhs)', 'turnover_others'],
   ['Paint volume (Litres/yr)', 'paint_volume'],
-  ['Retail sales %', 'mix_retail'], ['Contractor %', 'mix_contractor'], ['Architects / projects %', 'mix_architect'],
+  ['Direct consumer %', 'mix_retail'], ['Contractor %', 'mix_contractor'], ['Architects / projects %', 'mix_architect'],
   ['Industrial / OEM %', 'mix_industrial'],
   ['Contractors / painters associated', 'sec_contractors'], ['Architects associated', 'sec_architects'],
   ['Tinting machine', (v) => yn(v.has_tinting)], ['Tinting type', 'tinting_type'],
   ['Tinting brands', (v) => [...v.tinting_brands, v.tinting_brand_other].filter(Boolean).join(', ')],
   ['CD dealer', (v) => yn(v.cd_dealer)], ['CD %', 'cd_percent'], ['Credit days', 'credit_days'],
-  ['Purchases from', 'purchase_from'],
-  ['Payment modes', (v) => [...v.payment_modes, v.payment_other].filter(Boolean).join(', ')],
+  ['Purchases from', 'purchase_from'], ['Bank name', 'bank_name'],
+  ['Preferred payment method', (v) => [...v.payment_modes.filter((x) => x !== 'Others'), v.payment_other].filter(Boolean).join(', ')],
+  ['Sign board', (v) => v.signboards.join(', ')],
   ['Interest', 'interest'], ['Remarks', 'remarks'], ['Follow-up date', 'followup_date'],
   ['Status', 'status'], ['Status note', 'status_note'],
   ['Latitude', 'lat'], ['Longitude', 'lng'],
