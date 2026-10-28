@@ -104,7 +104,6 @@ async function route(req, env, url) {
   const me = await authenticate(req, env);
 
   if (p === '/api/me' && m === 'GET') return json({ user: publicUser(me) });
-  if (p === '/api/password' && m === 'POST') return changePassword(req, env, me);
   if (p === '/api/masters' && m === 'GET') return masters(env);
   if (p.startsWith('/api/pincode/') && m === 'GET') return pincode(p.split('/').pop());
 
@@ -237,14 +236,8 @@ async function login(req, env) {
   return json({ token: await makeToken(env, user.id), user: publicUser(user) });
 }
 
-async function changePassword(req, env, me) {
-  if (me.source === 'fieldone') fail(400, 'Your password comes from FieldOne. Change it there; Dealer Dash picks it up overnight.');
-  const b = await body(req);
-  if (!(await passwordMatches(env, me, b.old || ''))) fail(400, 'Current password is wrong');
-  await setPassword(env, me.id, b.new);
-  return json({ ok: true });
-}
-
+// Users cannot change their own password; only an admin sets passwords (Users page,
+// or FieldOne's admin panel for synced accounts).
 async function setPassword(env, userId, password) {
   if (!password || String(password).length < 6) fail(400, 'Password must be at least 6 characters');
   const { salt, hash } = await hashPassword(String(password));

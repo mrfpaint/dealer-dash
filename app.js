@@ -1331,21 +1331,13 @@ function viewAccount() {
       <h1>Account</h1>
       <div class="card"><dl class="kv"><dt>Name</dt><dd>${esc(user.name)}</dd><dt>Login</dt><dd>${esc(user.login)}</dd>
         <dt>Role</dt><dd>${ROLE_LABEL[user.role]} — ${ROLE_NAME[user.role]}</dd>${user.region ? `<dt>Region</dt><dd>${esc(user.region)}</dd>` : ''}</dl></div>
-      ${user.source === 'fieldone'
-        ? '<div class="card"><h2>Password</h2><p class="muted" style="margin:0">You log in with your FieldOne username and password. To change it, change it in FieldOne; Dealer Dash picks it up overnight.</p></div>'
-        : `<div class="card"><h2>Change password</h2>
-        <form id="pwForm"><label>Current password</label><input name="old" type="password" required autocomplete="current-password">
-          <label>New password</label><input name="new" type="password" required minlength="6" autocomplete="new-password">
-          <button class="btn primary mt">Change password</button></form></div>`}
+      <div class="card"><h2>Password</h2><p class="muted" style="margin:0">${user.source === 'fieldone'
+        ? 'You log in with your FieldOne username and password. Password changes are made by the admin in FieldOne; Dealer Dash picks them up overnight.'
+        : 'Password changes are made by the admin.'}</p></div>
       <div class="card"><h2>Install on your phone</h2>
         <p class="muted" style="margin:0">Android (Chrome): menu ⋮ → <b>Add to Home screen</b>. iPhone (Safari): Share → <b>Add to Home Screen</b>. The app then opens full-screen and works without signal.</p></div>
       <button class="btn block" id="logoutBtn">Log out</button>
     </div>`;
-  if ($('#pwForm')) $('#pwForm').onsubmit = async (e) => {
-    e.preventDefault();
-    try { await api('/api/password', { method: 'POST', body: Object.fromEntries(new FormData(e.target)) }); toast('Password changed'); e.target.reset(); }
-    catch (err) { toast(err.message, true); }
-  };
   $('#logoutBtn').onclick = async () => {
     const pending = await myOutbox();
     if (pending.length && !confirm(`${pending.length} visit(s) are not uploaded yet. They stay on this phone and upload after you log in again. Log out?`)) return;

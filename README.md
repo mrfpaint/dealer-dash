@@ -17,7 +17,7 @@ Data is in D1 (`dealer-dash`) and photos are in R2 (`dealer-dash-photos`). No bu
 | Field rep | Fill in visits and see and edit their own |
 | Area manager | Above, plus a dashboard of everyone reporting to them (directly or through others) and setting shortlist status |
 | Sales head | Dashboard of everything, status, and editing brands and classifications |
-| Admin | Everything, plus adding and disabling users and resetting passwords |
+| Admin | Everything, plus adding and disabling users and resetting passwords (users cannot change their own) |
 
 ## Accounts come from FieldOne
 
