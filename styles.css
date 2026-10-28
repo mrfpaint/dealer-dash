@@ -76,6 +76,10 @@ textarea { min-height: 80px; resize: vertical; }
 .brand-card { border: 1px solid var(--line); border-radius: 10px; padding: .75rem; margin-top: .65rem; background: #fcfcfd; }
 .brand-card .title { font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
 
+.total-row { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .3rem; }
+.total-row input { font-weight: 700; }
+.share { padding: .55rem 0; font-size: .92rem; color: var(--muted); }
+
 /* Tinting machines: a table on wide screens, a small card per row on phones */
 .machine-head { display: none; }
 .machine-row { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; border: 1px solid var(--line); border-radius: 10px; padding: .6rem 2rem .7rem .7rem; margin-top: .6rem; background: #fcfcfd; }

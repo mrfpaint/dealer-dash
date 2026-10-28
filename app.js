@@ -414,7 +414,7 @@ function blankVisit() {
     shop_name: '', owner_name: '', mobile1: '', mobile2: '', landline: '', address: '',
     pincode: '', area: '', town: '', district: '', state: '',
     brands: [],
-    turnover_total: null, turnover_wood: null, turnover_metal: null, turnover_wall: null,
+    turnover_total: null, turnover_paint: null, turnover_nonpaint: null, turnover_wood: null, turnover_metal: null, turnover_wall: null,
     turnover_waterproofing: null, turnover_industrial: null, turnover_others: null, paint_volume: null,
     mix_retail: null, mix_contractor: null, mix_architect: null, mix_industrial: null,
     sec_contractors: null, sec_architects: null,
@@ -527,6 +527,11 @@ function captureGps() {
 }
 function updateGps() { const el = $('#gps'); if (el) el.innerHTML = gpsHtml(); }
 
+function paintShareText() {
+  if (!f.turnover_total || f.turnover_paint == null) return '—';
+  return `${Math.round((f.turnover_paint / f.turnover_total) * 100)}% paint · ${Math.round(((f.turnover_total - f.turnover_paint) / f.turnover_total) * 100)}% non-paint`;
+}
+
 function mixSum() {
   const vals = MIX_FIELDS.map((k) => f[k]).filter((n) => n != null);
   return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) * 10) / 10 : null;
@@ -634,6 +639,8 @@ function renderForm() {
     </div>
 
     <div class="card section" id="sec_turnover"><h2><span class="num">4</span>Turnover (₹ lakhs per year)</h2>
+      <div class="hint" style="margin-top:-.4rem">1 crore = 100 lakhs.</div>
+      <h3>4.1 Paints</h3>
       <div class="row">
         ${field('turnover_wood', 'Wood', num(20))}
         ${field('turnover_metal', 'Metal', num(30))}
@@ -643,8 +650,14 @@ function renderForm() {
         ${field('turnover_others', 'Others', num(5))}
       </div>
       <div class="row">
-        ${field('turnover_total', 'Total turnover', num(120, { hint: 'Adds up the six above, or type the total if that is all the dealer tells you. 1 crore = 100 lakhs.' }))}
+        ${field('turnover_paint', 'Paint turnover', num(120, { hint: 'Adds up the six above, or type it if that is all the dealer tells you.' }))}
         ${field('paint_volume', 'Paint volume (litres/yr)', num('25000', { step: '1', inputmode: 'numeric' }))}
+      </div>
+      <h3>4.2 Other non-paint products</h3>
+      ${field('turnover_nonpaint', 'Non-paint turnover', num(60, { hint: 'Hardware, sanitary, electrical and other items the shop sells.' }))}
+      <div class="row total-row">
+        ${field('turnover_total', 'Total turnover', num(180, { hint: 'Paint + non-paint, or type it if that is all the dealer tells you.' }))}
+        <div><label>Paint share</label><div class="share" id="paintShare">${paintShareText()}</div></div>
       </div>
       <h3>Customer type (% of sales)</h3>
       <div class="row">
@@ -732,12 +745,20 @@ app.addEventListener('input', (e) => {
   setPath(f, el.name, v);
   el.classList.remove('invalid');
 
+  // Paint turnover = the six paint parts; total = paint + non-paint. Each fills itself in
+  // until the rep types into it.
+  if (el.name === 'turnover_paint') f._paintManual = v != null;
+  if (el.name === 'turnover_total') f._totalManual = v != null;
+  const sum = (vals) => { const n = vals.filter((x) => x != null); return n.length ? Math.round(n.reduce((a, b) => a + b, 0) * 100) / 100 : null; };
+  if (TURNOVER_PARTS.some((k) => el.name === `turnover_${k}`) && !f._paintManual) {
+    f.turnover_paint = sum(TURNOVER_PARTS.map((k) => f[`turnover_${k}`]));
+    $('#f_turnover_paint').value = f.turnover_paint ?? '';
+  }
   if (el.name.startsWith('turnover_') && el.name !== 'turnover_total' && !f._totalManual) {
-    const parts = TURNOVER_PARTS.map((k) => f[`turnover_${k}`]).filter((n) => n != null);
-    f.turnover_total = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100 : null;
+    f.turnover_total = sum([f.turnover_paint, f.turnover_nonpaint]);
     $('#f_turnover_total').value = f.turnover_total ?? '';
   }
-  if (el.name === 'turnover_total') f._totalManual = v != null;
+  if (el.name.startsWith('turnover_')) $('#paintShare').textContent = paintShareText();
   if (el.name.startsWith('mix_')) $('#mixTotal').innerHTML = mixTotalText();
   if (el.name === 'pincode' && v.length === 6) lookupPincode(v);
   saveDraftSoon();
@@ -894,7 +915,8 @@ function validate() {
   if (f.mobile2 && !/^[6-9]\d{9}$/.test(cleanMobile(f.mobile2))) bad('mobile2', 'Mobile 2 is not a valid 10-digit number');
   if (f.pincode && !/^\d{6}$/.test(f.pincode)) bad('pincode', 'Pincode must be 6 digits');
   if (!f.brands.length) errs.push(['brands', 'Select at least one brand the shop sells']);
-  for (const k of [...TURNOVER_PARTS, 'total']) if (f[`turnover_${k}`] < 0) bad(`turnover_${k}`, 'Turnover cannot be negative');
+  for (const k of [...TURNOVER_PARTS, 'paint', 'nonpaint', 'total']) if (f[`turnover_${k}`] < 0) bad(`turnover_${k}`, 'Turnover cannot be negative');
+  if (f.turnover_total != null && f.turnover_paint != null && f.turnover_paint > f.turnover_total + 0.01) bad('turnover_total', 'Total turnover cannot be less than the paint turnover');
   if (f.paint_volume < 0) bad('paint_volume', 'Paint volume cannot be negative');
   for (const k of MIX_FIELDS) if (f[k] != null && (f[k] < 0 || f[k] > 100)) bad(k, 'Each customer-type share must be between 0 and 100%');
   const mix = mixSum();
@@ -974,8 +996,10 @@ async function showVisit(v, { pending = null, onChange = null } = {}) {
           ${kvRow('Address', esc([v.address, v.area, v.town, v.district, v.state, v.pincode].filter(Boolean).join(', ')))}
           ${kvRow('Location', v.lat != null ? `<a href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open in Google Maps</a> (±${Math.round(v.gps_accuracy || 0)} m)` : '')}
           ${kvRow('Brands sold', brandsHtml(v.brands))}
-          ${kvRow('Turnover', [lakh(v.turnover_total) && `<b>${lakh(v.turnover_total)}</b>`,
+          ${kvRow('Total turnover', lakh(v.turnover_total) && `<b>${lakh(v.turnover_total)}</b>`)}
+          ${kvRow('Paint turnover', [lakh(v.turnover_paint) && `<b>${lakh(v.turnover_paint)}</b>`,
             ...TURNOVER_PARTS.filter((k) => v[`turnover_${k}`] != null).map((k) => `${k[0].toUpperCase() + k.slice(1)} ${lakh(v[`turnover_${k}`])}`)].filter(Boolean).join(' · '))}
+          ${kvRow('Non-paint turnover', lakh(v.turnover_nonpaint))}
           ${kvRow('Paint volume', v.paint_volume != null ? `${Number(v.paint_volume).toLocaleString('en-IN')} litres / year` : '')}
           ${kvRow('Customer type', MIX_FIELDS.filter((k) => v[k] != null).map((k) => `${MIX_LABEL[k]} ${v[k]}%`).join(' · '))}
           ${kvRow('Secondary', [v.sec_contractors != null && `${v.sec_contractors} contractors / painters`, v.sec_architects != null && `${v.sec_architects} architects`].filter(Boolean).join(' · '))}
@@ -1077,7 +1101,7 @@ async function viewDashboard() {
     const t = s.totals;
     $('#stats').innerHTML = [
       [t.n, 'Dealers visited'], [t.hot || 0, 'Hot'], [t.warm || 0, 'Warm'], [t.tinting || 0, 'With tinting'],
-      [t.shortlisted || 0, 'Shortlisted'], [t.converted || 0, 'Converted'], [t.turnover ? lakh(t.turnover) : '—', 'Total turnover'],
+      [t.shortlisted || 0, 'Shortlisted'], [t.converted || 0, 'Converted'], [t.turnover ? lakh(t.turnover) : '—', 'Total turnover'], [t.paint_turnover ? lakh(t.paint_turnover) : '—', 'Paint turnover'],
     ].map(([v, l]) => `<div class="stat"><div class="v">${esc(v)}</div><div class="l">${l}</div></div>`).join('');
     const bars = (title, rows) => {
       const max = Math.max(1, ...rows.map((r) => r.n));

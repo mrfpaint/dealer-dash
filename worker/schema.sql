@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS visits (
   -- [{brand, dealer_type: Regular|Special|Exclusive, tier}]
   brands_json     TEXT NOT NULL DEFAULT '[]',
 
-  turnover_total  REAL,                       -- ₹ lakhs per year
+  turnover_total  REAL,                       -- ₹ lakhs per year: paint + non-paint
+  turnover_paint  REAL,                       -- the six paint parts below
+  turnover_nonpaint REAL,                     -- hardware and other non-paint products
   turnover_wood   REAL,
   turnover_metal  REAL,
   turnover_wall   REAL,

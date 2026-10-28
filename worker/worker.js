@@ -591,7 +591,9 @@ async function saveVisit(req, env, me) {
     mobile2: phone(v.mobile2),
     landline: phone(v.landline),
     brands_json: JSON.stringify(brands),
-    turnover_total: num(v.turnover_total), // ₹ lakhs per year
+    turnover_total: num(v.turnover_total), // ₹ lakhs per year: paint + non-paint
+    turnover_paint: num(v.turnover_paint),
+    turnover_nonpaint: num(v.turnover_nonpaint),
     turnover_wood: num(v.turnover_wood),
     turnover_metal: num(v.turnover_metal),
     turnover_wall: num(v.turnover_wall),
@@ -735,7 +737,7 @@ async function summary(env, me, q) {
   const [totals, byState, byRep, byBrand, byStatus] = await env.DB.batch([
     stmt(`COUNT(*) n, SUM(v.interest='Hot') hot, SUM(v.interest='Warm') warm, SUM(v.interest='Cold') cold,
           SUM(v.has_tinting=1) tinting, SUM(v.status='Shortlisted') shortlisted, SUM(v.status='Converted') converted,
-          ROUND(SUM(v.turnover_total), 2) turnover`),
+          ROUND(SUM(v.turnover_total), 2) turnover, ROUND(SUM(v.turnover_paint), 2) paint_turnover`),
     stmt("COALESCE(v.state,'(not given)') k, COUNT(*) n", ' GROUP BY k ORDER BY n DESC LIMIT 10'),
     stmt('v.rep_name k, COUNT(*) n', ' GROUP BY v.user_id ORDER BY n DESC LIMIT 10'),
     env.DB.prepare(`${f.cte} SELECT json_extract(j.value,'$.brand') k, COUNT(*) n FROM visits v, json_each(v.brands_json) j
@@ -753,7 +755,8 @@ const EXPORT_COLS = [
   ['Address', 'address'], ['Area', 'area'], ['Town', 'town'], ['District', 'district'], ['State', 'state'],
   ['Pincode', 'pincode'], ['Mobile 1', 'mobile1'], ['Mobile 2', 'mobile2'], ['Landline', 'landline'],
   ['Brands sold', (v) => [...v.brands].sort((a, b) => /^MRF/.test(b.brand) - /^MRF/.test(a.brand)).map(brandLabel).join('; ')],
-  ['Turnover total (Lakhs)', 'turnover_total'], ['Wood (Lakhs)', 'turnover_wood'], ['Metal (Lakhs)', 'turnover_metal'],
+  ['Turnover total (Lakhs)', 'turnover_total'], ['Paint turnover (Lakhs)', 'turnover_paint'],
+  ['Non-paint turnover (Lakhs)', 'turnover_nonpaint'], ['Wood (Lakhs)', 'turnover_wood'], ['Metal (Lakhs)', 'turnover_metal'],
   ['Wall (Lakhs)', 'turnover_wall'], ['Waterproofing (Lakhs)', 'turnover_waterproofing'],
   ['Industrial (Lakhs)', 'turnover_industrial'], ['Others (Lakhs)', 'turnover_others'],
   ['Paint volume (Litres/yr)', 'paint_volume'],
